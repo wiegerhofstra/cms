@@ -1,0 +1,2 @@
+ALTER TABLE "content_model_fields" ADD COLUMN "is_title" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "content_model_fields_model_title_unique" ON "content_model_fields" USING btree ("model_id") WHERE "content_model_fields"."is_title" = true;

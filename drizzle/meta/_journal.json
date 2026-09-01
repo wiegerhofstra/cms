@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1779284487524,
+      "tag": "0000_cooing_ezekiel",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779954882028,
+      "tag": "0001_lame_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779959241348,
+      "tag": "0002_exotic_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783350069876,
+      "tag": "0003_overconfident_vivisector",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783612800000,
+      "tag": "0004_admin_user_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783711220469,
+      "tag": "0005_robust_zarek",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785331207809,
+      "tag": "0006_aromatic_smiling_tiger",
+      "breakpoints": true
+    }
+  ]
+}
