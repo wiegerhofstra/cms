@@ -75,6 +75,7 @@ export async function validateEntryData(
     .orderBy(contentModelFields.position);
 
   await validateSlugFields(db, tenantId, modelId, fields, data, excludeEntryId);
+  validateUrlFields(fields, data);
 }
 
 export async function validateEntryForPublish(db: EntryReadDb, tenantId: string, entryId: string): Promise<void> {
@@ -100,6 +101,7 @@ export async function validateEntryDataForPublish(
     .orderBy(contentModelFields.position);
 
   await validateSlugFields(db, tenantId, modelId, fields, data, excludeEntryId);
+  validateUrlFields(fields, data);
 
   for (const field of fields) {
     const value = data[field.key];
@@ -151,6 +153,19 @@ async function validateSlugFields(
 
     if (existingEntry) {
       throw new ApiError("CONFLICT", `Slug is already used by another entry: ${field.key}`);
+    }
+  }
+}
+
+function validateUrlFields(fields: ContentModelFieldRow[], data: Record<string, unknown>): void {
+  for (const field of fields) {
+    if (field.type !== "url") continue;
+
+    const value = data[field.key];
+    if (isEmptySlugValue(value)) continue;
+
+    if (typeof value !== "string" || !URL.canParse(value)) {
+      throw new ApiError("VALIDATION_ERROR", `URL field must contain a valid absolute URL: ${field.key}`);
     }
   }
 }

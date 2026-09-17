@@ -102,6 +102,16 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
     );
   }
 
+  if (field.type === "url") {
+    return (
+      <Field>
+        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+        <Input id={fieldId} type="url" inputMode="url" placeholder="https://example.com" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
+        <FieldDescription>{field.key}. Enter a complete URL, including the protocol.</FieldDescription>
+      </Field>
+    );
+  }
+
   if (field.type === "slug") {
     return (
       <Field>

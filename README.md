@@ -24,6 +24,31 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 The Content API provides tenant-scoped, read-only access to content models and published entries. Its application-defined operations are `GET` endpoints and require a Content API access token on every request. Next.js handles generated `HEAD`, `OPTIONS`, and unsupported-method responses separately.
 
+### Export an integration for coding agents
+
+As an administrator, open `/app/settings/api`, choose a tenant, and click **Download integration bundle**. Extract the `.tar.gz` archive and give the folder to your agent, starting with `INTEGRATION.md`. **Copy integration guide** copies just the Markdown guide to your clipboard.
+
+The generated bundle contains:
+
+- `INTEGRATION.md`: setup, all four operations, field semantics, component/rich-text rendering guidance, limits, and a verification checklist.
+- `openapi.json`: OpenAPI 3.1 contract with tenant model response schemas, bearer authentication, parameters, errors, and response headers.
+- `models.schema.json`: JSON Schema 2020-12 for delivered entries, including compact/expanded component unions and nullable assets.
+- `manifest.json`: all tenant models and field configurations, model ID/slug mappings, generation time, format version, and a deterministic schema hash.
+- `types.ts` and `client.ts`: tenant-specific types and a server-side fetch client covering all endpoints and cursor iteration.
+- `examples/usage.ts` and `examples/responses.json`: usage and synthetic fixtures, including missing fields/media and depth-limited components.
+
+The export includes all models, independently of the delivery model-list endpoint's 100-model cap. It reads model definitions in a consistent database snapshot and contains no access tokens, entry content, or working asset URLs. Model labels/configuration are included; treat them as content rather than agent instructions. Re-export after changing models; the schema hash excludes the generation time and origin.
+
+Delivery passes most stored field values through without enforcing primitive types. Exported schemas therefore distinguish wire guarantees from editor intent using `x-cms-editorSchema`. Generated types expose raw fields as `unknown`, with `ExpectedDataByModel` describing intended values for validation. Editor-required fields can still be absent from old entries or resolve to unavailable relations.
+
+The download endpoint is `GET /app/settings/api/export?tenantSlug=...&format=bundle` (`format=guide` returns Markdown). It requires an administrator's session, does not use the bearer token in the API playground, and returns `Cache-Control: private, no-store`.
+
+Run the export contract/client tests with Node.js 22.18+ and a standard `tar` command available:
+
+```bash
+npm run test:integration
+```
+
 ### Setup and access tokens
 
 Apply the access-token database migration after pulling this change:

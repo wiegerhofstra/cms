@@ -4,6 +4,7 @@ export const modelStatusSchema = z.enum(["active", "archived"]);
 export const fieldTypeSchema = z.enum([
   "text",
   "rich_text",
+  "url",
   "number",
   "boolean",
   "date",

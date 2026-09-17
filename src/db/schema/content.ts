@@ -20,6 +20,7 @@ export const entryStatus = pgEnum("entry_status", ["draft", "published"]);
 export const fieldType = pgEnum("field_type", [
   "text",
   "rich_text",
+  "url",
   "number",
   "boolean",
   "date",
