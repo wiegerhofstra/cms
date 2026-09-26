@@ -17,6 +17,7 @@ import {
   deleteField,
   deleteManagedUser,
   deleteModel,
+  moveField,
   presignAssetUpload,
   publishEntry,
   reorderChildren,
@@ -132,6 +133,12 @@ export async function createFieldAction(tenantSlug: string, modelId: string, inp
 
 export async function updateFieldAction(tenantSlug: string, modelId: string, fieldId: string, input: unknown) {
   const result = await updateField(modelId, fieldId, input, tenantSlug);
+  refresh();
+  return result;
+}
+
+export async function moveFieldAction(tenantSlug: string, modelId: string, input: { fieldId: string; direction: "up" | "down" }) {
+  const result = await moveField(modelId, input, tenantSlug);
   refresh();
   return result;
 }

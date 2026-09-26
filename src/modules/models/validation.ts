@@ -55,4 +55,9 @@ export const updateFieldSchema = fieldInputSchema.partial().refine((value) => Ob
   message: "Provide at least one field to update",
 });
 
+export const moveFieldSchema = z.object({
+  fieldId: z.uuid(),
+  direction: z.enum(["up", "down"]),
+});
+
 export type FieldInput = z.infer<typeof fieldInputSchema>;

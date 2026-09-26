@@ -150,7 +150,7 @@ export function ModelsPanel(props: {
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 id="model-fields-heading" className="font-medium">Fields</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Define the structure editors fill in for each entry.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Use the arrows to change field order. Changes save automatically and apply to entry forms.</p>
                 </div>
                 <FieldEditor tenantSlug={props.tenantSlug} models={props.models} modelId={props.activeModelId} />
               </div>

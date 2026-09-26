@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronsUpDown, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronsUpDown, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -28,7 +28,7 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHe
 import { Textarea } from "@/components/ui/textarea";
 import type { ContentField, ContentModel, FieldInput, FieldType } from "@/lib/cms/types";
 import { defaultRichTextFeatures, richTextFeaturesFromConfig, withRichTextFeatures, type RichTextFeature, type RichTextFeatureConfig } from "@/lib/rich-text";
-import { createFieldAction, deleteFieldAction, updateFieldAction } from "./actions";
+import { createFieldAction, deleteFieldAction, moveFieldAction, updateFieldAction } from "./actions";
 import { formatJson, parseJsonObject } from "./utils";
 
 const fieldTypes: FieldType[] = ["text", "rich_text", "url", "number", "boolean", "date", "enum", "asset", "component", "slug"];
@@ -230,6 +230,18 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
 export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug: string; fields: ContentField[]; models: ContentModel[]; modelId: string }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const isArchived = models.find((model) => model.id === modelId)?.status === "archived";
+
+  function move(field: ContentField, direction: "up" | "down") {
+    startTransition(async () => {
+      try {
+        await moveFieldAction(tenantSlug, modelId, { fieldId: field.id, direction });
+        toast.success(`${field.label} moved ${direction}`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not move field");
+      }
+    });
+  }
 
   function run(action: () => Promise<unknown>, success: string, onSuccess?: () => void) {
     startTransition(async () => {
@@ -246,8 +258,17 @@ export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug
 
   return (
     <div className="divide-y overflow-hidden rounded-2xl border bg-background/40">
-      {fields.length ? fields.map((field) => (
-        <div key={field.id} className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(10rem,0.8fr)_auto] md:items-center">
+      {fields.length ? fields.map((field, index) => (
+        <div key={field.id} data-field-id={field.id} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 p-4 md:grid-cols-[auto_minmax(0,1fr)_minmax(10rem,0.8fr)_auto]">
+          <div className="row-span-3 flex flex-col items-center gap-1 md:row-span-1" role="group" aria-label={`Reorder ${field.label}`}>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${field.label} up`} title="Move up" disabled={isPending || isArchived || index === 0} onClick={() => move(field, "up")}>
+              <ArrowUp />
+            </Button>
+            <span className="text-xs tabular-nums text-muted-foreground" aria-label={`Position ${index + 1} of ${fields.length}`}>{index + 1}</span>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${field.label} down`} title="Move down" disabled={isPending || isArchived || index === fields.length - 1} onClick={() => move(field, "down")}>
+              <ArrowDown />
+            </Button>
+          </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{field.label}</p>

@@ -29,7 +29,7 @@ import { setActiveTenantId } from "@/lib/tenant/active-tenant";
 import { createEntryRevision, getActiveModel, getTenantEntry, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
 import { childEntrySchema, entryDataSchema, entryStatusSchema, reorderChildrenSchema, updateEntrySchema } from "@/modules/entries/validation";
 import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields";
-import { createModelSchema, fieldInputSchema, modelStatusSchema, updateFieldSchema, updateModelSchema } from "@/modules/models/validation";
+import { createModelSchema, fieldInputSchema, modelStatusSchema, moveFieldSchema, updateFieldSchema, updateModelSchema } from "@/modules/models/validation";
 import { extractImageDimensions } from "@/modules/uploads/image-dimensions";
 import { completeUploadSchema, presignUploadSchema, sanitizeFilename, assertAllowedUpload } from "@/modules/uploads/validation";
 import { createUploadToken, parseUploadToken } from "@/modules/uploads/token";
@@ -596,6 +596,38 @@ export async function createField(modelId: string, input: unknown, tenantSlug?: 
     }
     throw error;
   }
+}
+
+export async function moveField(modelId: string, input: unknown, tenantSlug?: string) {
+  const context = await requireTenantContext(crypto.randomUUID(), tenantSlug);
+  const data = parseInput(moveFieldSchema, input);
+
+  await db.transaction(async (tx) => {
+    // Serialize moves for a model and use its current order, not a stale client list.
+    const [model] = await tx.select({ id: contentModels.id, status: contentModels.status })
+      .from(contentModels)
+      .where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId)))
+      .for("update");
+    if (!model) throw new ApiError("NOT_FOUND", "Model was not found");
+    if (model.status === "archived") throw new ApiError("CONFLICT", "Archived models cannot be edited");
+
+    const scope = and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.modelId, modelId));
+    const fields = await tx.select({ id: contentModelFields.id }).from(contentModelFields)
+      .where(scope).orderBy(contentModelFields.position, contentModelFields.id).for("update");
+    const index = fields.findIndex((field) => field.id === data.fieldId);
+    if (index === -1) throw new ApiError("NOT_FOUND", "Field was not found");
+    const nextIndex = index + (data.direction === "up" ? -1 : 1);
+    if (nextIndex < 0 || nextIndex >= fields.length) return;
+    [fields[index], fields[nextIndex]] = [fields[nextIndex]!, fields[index]!];
+
+    const positions = fields.map((field, position) => sql`when ${field.id}::uuid then ${position}::integer`);
+    await tx.update(contentModelFields).set({
+      position: sql`case ${contentModelFields.id} ${sql.join(positions, sql` `)} else ${contentModelFields.position} end`,
+      updatedAt: new Date(),
+    }).where(scope);
+  });
+
+  return { reordered: true as const };
 }
 
 export async function updateField(modelId: string, fieldId: string, input: unknown, tenantSlug?: string) {
