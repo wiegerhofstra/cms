@@ -2,7 +2,7 @@ export type TenantRole = "owner" | "editor";
 export type AppRole = "admin" | "user";
 export type ModelStatus = "active" | "archived";
 export type EntryStatus = "draft" | "published";
-export type FieldType = "text" | "rich_text" | "url" | "number" | "boolean" | "date" | "enum" | "asset" | "component" | "slug";
+export type FieldType = "text" | "rich_text" | "url" | "number" | "boolean" | "date" | "time" | "enum" | "asset" | "component" | "slug";
 export type AssetStatus = "pending" | "ready" | "deleted";
 
 export type CmsUser = {

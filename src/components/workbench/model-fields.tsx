@@ -31,7 +31,7 @@ import { defaultRichTextFeatures, richTextFeaturesFromConfig, withRichTextFeatur
 import { createFieldAction, deleteFieldAction, moveFieldAction, updateFieldAction } from "./actions";
 import { formatJson, parseJsonObject } from "./utils";
 
-const fieldTypes: FieldType[] = ["text", "rich_text", "url", "number", "boolean", "date", "enum", "asset", "component", "slug"];
+const fieldTypes: FieldType[] = ["text", "rich_text", "url", "number", "boolean", "date", "time", "enum", "asset", "component", "slug"];
 const fieldTypeLabels: Record<FieldType, string> = {
   text: "Text",
   rich_text: "Rich text",
@@ -39,6 +39,7 @@ const fieldTypeLabels: Record<FieldType, string> = {
   number: "Number",
   boolean: "Boolean",
   date: "Date",
+  time: "Time of day",
   enum: "Dropdown",
   asset: "Asset",
   component: "Component",

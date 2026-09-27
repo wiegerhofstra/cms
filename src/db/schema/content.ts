@@ -24,6 +24,7 @@ export const fieldType = pgEnum("field_type", [
   "number",
   "boolean",
   "date",
+  "time",
   "enum",
   "asset",
   "component",

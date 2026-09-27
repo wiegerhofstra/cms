@@ -5,6 +5,7 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { TableKit } from "@tiptap/extension-table";
 import { Bold, Code, Heading2, Heading3, ImageIcon, Italic, Link2, List, ListOrdered, Minus, Quote, Redo2, Undo2, Unlink } from "lucide-react";
 import { useEffect } from "react";
 
@@ -41,6 +42,7 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
             "[&_code]:rounded-md [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono",
             "[&_h2]:mt-2 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:text-lg [&_h3]:font-semibold",
             "[&_ol]:ml-5 [&_ol]:list-decimal [&_p]:leading-7 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_pre_code]:bg-transparent [&_ul]:ml-5 [&_ul]:list-disc",
+            "overflow-x-auto [&_table]:w-full [&_table]:border-collapse [&_td]:min-w-20 [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:bg-muted [&_th]:p-2 [&_th]:text-left [&_h4]:font-semibold",
           ),
         },
       },
@@ -80,6 +82,9 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
   return (
     <div className="rounded-xl border bg-muted/30">
       <div className="flex flex-wrap items-center gap-1 border-b p-2">
+        <Button type="button" variant="ghost" size="sm" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run()}>Insert table</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => editor.chain().focus().addRowAfter().run()}>Add row</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => editor.chain().focus().addColumnAfter().run()}>Add column</Button>
         <ToolbarButton active={editor.isActive("bold")} label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
           <Bold />
         </ToolbarButton>
@@ -182,11 +187,13 @@ function extensionsFor(features: RichTextFeatureConfig, assets: AssetWithPreview
       bulletList: features.lists ? undefined : false,
       code: features.code ? undefined : false,
       codeBlock: features.code ? undefined : false,
-      heading: features.headings ? { levels: [2, 3] } : false,
+      heading: features.headings ? { levels: [1, 2, 3, 4, 5, 6] } : false,
+      link: false,
       horizontalRule: features.quotes ? undefined : false,
       listItem: features.lists ? undefined : false,
       orderedList: features.lists ? undefined : false,
     }),
+    TableKit,
     ...(features.links ? [Link.configure({ openOnClick: false, autolink: true })] : []),
     ...(features.media ? [AssetNode.configure({ assets })] : []),
     Placeholder.configure({ placeholder: "Start writing..." }),

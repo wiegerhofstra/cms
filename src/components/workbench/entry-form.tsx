@@ -92,12 +92,12 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
     );
   }
 
-  if (field.type === "date") {
+  if (field.type === "date" || field.type === "time") {
     return (
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-        <Input id={fieldId} type="date" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-        <FieldDescription>{field.key}</FieldDescription>
+        <Input id={fieldId} type={field.type} step={field.type === "time" ? 60 : undefined} value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
+        <FieldDescription>{field.key}{field.type === "time" ? ". Local time, in hours and minutes." : ""}</FieldDescription>
       </Field>
     );
   }

@@ -22,7 +22,7 @@ const fixture = {
   tenant: { name: "Example café", slug: "example" }, origin: "https://cms.example.invalid",
   models: [
     { id: articleId, slug: "article", name: "Article", status: "active", fields: [
-      ...["text", "number", "boolean", "date", "url", "slug", "rich_text", "asset"].map((type) => field(type, type)),
+      ...["text", "number", "boolean", "date", "time", "url", "slug", "rich_text", "asset"].map((type) => field(type, type)),
       field("enum", "enum", { config: { options: ["one", 2, { value: "three", label: "Three" }] } }),
       field("sections", "component", { isList: true, targetModelIds: [heroId, ctaId] }),
       field("hero", "component", { targetModelIds: [heroId] }),
@@ -63,6 +63,16 @@ test("wire schema reflects pass-through primitive JSON and does not confuse edit
   assert.equal(properties.number["x-cms-editorSchema"].type, "number");
   assert.deepEqual(properties.enum["x-cms-editorSchema"].enum, ["one", "2", "three"]);
   assert.equal(properties.hero["x-cms-requiredForPublish"], true);
+});
+
+test("time fields export minute-precision local time intent, examples and model types", () => {
+  const properties = schema.$defs.Entry_11111111111141118111111111111111.allOf[1].properties.data.properties;
+  const validateTime = ajv.compile(properties.time["x-cms-editorSchema"]);
+  assert.equal(validateTime("00:00"), true);
+  assert.equal(validateTime("23:59"), true);
+  for (const value of ["24:00", "9:00", "09:00:00", "09:00Z", "09:00\n"]) assert.equal(validateTime(value), false);
+  assert.equal(examples.byModel.article.compact.data[0].data.time, "09:00");
+  assert.match(files["types.ts"], /"time"/);
 });
 
 test("schemas reject wrong envelopes, wrong model targets and malformed delivered assets", () => {

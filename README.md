@@ -22,6 +22,15 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Content API
 
+For the Ommelanden model setup and legacy field mapping, see
+[the migration guide](docs/ommelanden-migration.md).
+The [content import guide](docs/ommelanden-content-import.md) records the completed
+database/media import and its repeatable commands.
+
+The reusable `time` field type stores local `HH:mm` values and uses a time picker.
+Run `npm run db:migrate` before using it. It validates hours/minutes when saving
+or publishing and is included in integration exports.
+
 The Content API provides tenant-scoped, read-only access to content models and published entries. Its application-defined operations are `GET` endpoints and require a Content API access token on every request. Next.js handles generated `HEAD`, `OPTIONS`, and unsupported-method responses separately.
 
 ### Export an integration for coding agents
@@ -95,7 +104,7 @@ An entry contains `id`, `modelId`, `status`, `data`, `publishedAt`, `createdAt`,
 - At the depth limit, a component reference is returned as `{ "id": "...", "modelId": "..." }` instead of a fully expanded entry. The same compact reference prevents recursion when a component cycle points to an ancestor.
 - For example, `maxDepth=1` returns compact references for direct components. `maxDepth=5` can fully expand entries through the fifth level; references from that level remain compact.
 - A request can traverse at most 500 component references. Larger graphs return `400 BAD_REQUEST`; request fewer roots or a smaller `maxDepth`.
-- A response can resolve at most 200 unique assets. Rich-text expansion is also bounded by node count and nesting depth; oversized documents return `400 BAD_REQUEST`.
+- A response can resolve at most 200 unique assets. Rich-text expansion permits 2,000 visited values per document and 20,000 across the response, with nesting depth at most 100; oversized content returns `400 BAD_REQUEST`.
 
 ### Published entries and assets
 

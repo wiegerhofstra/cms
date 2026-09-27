@@ -7,13 +7,12 @@ import { db } from "@/db";
 import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
 import { presignRead } from "@/lib/storage/s3";
+import { createRichTextAssetResolver } from "./rich-text";
 
 type EntryRow = typeof contentEntries.$inferSelect;
 type FieldRow = typeof contentModelFields.$inferSelect & { targetModelIds: string[] };
 const maxComponentReferences = 500;
 const maxResolvedAssets = 200;
-const maxRichTextNodes = 2_000;
-const maxRichTextDepth = 100;
 
 export async function listDeliveryModels(tenantId: string) {
   const rows = await db
@@ -126,7 +125,7 @@ function createEntryResolver(tenantId: string, maxDepth: number) {
   const assetsById = new Map<string, Promise<unknown>>();
   let componentReferenceCount = 0;
   let resolvedAssetCount = 0;
-  let richTextNodeCount = 0;
+  const resolveRichTextAssets = createRichTextAssetResolver(deliveryAsset);
 
   async function fields(modelId: string) {
     let result = fieldsByModel.get(modelId);
@@ -236,27 +235,6 @@ function createEntryResolver(tenantId: string, maxDepth: number) {
     );
     const available = resolved.filter((item) => item !== null);
     return field.isList ? available : (available[0] ?? null);
-  }
-
-  async function resolveRichTextAssets(value: unknown, depth = 0): Promise<unknown> {
-    richTextNodeCount += 1;
-    if (richTextNodeCount > maxRichTextNodes || depth > maxRichTextDepth) {
-      throw new CmsError("BAD_REQUEST", "Rich-text content is too deeply nested or complex to expand");
-    }
-    if (Array.isArray(value)) return Promise.all(value.map((item) => resolveRichTextAssets(item, depth + 1)));
-    if (typeof value !== "object" || value === null) return value;
-
-    const record = value as Record<string, unknown>;
-    if (record.type === "asset" && typeof record.attrs === "object" && record.attrs !== null) {
-      const attrs = record.attrs as Record<string, unknown>;
-      if (typeof attrs.assetId === "string") {
-        return { ...record, attrs: { ...attrs, asset: await deliveryAsset(attrs.assetId) } };
-      }
-    }
-
-    return Object.fromEntries(
-      await Promise.all(Object.entries(record).map(async ([key, nestedValue]) => [key, await resolveRichTextAssets(nestedValue, depth + 1)] as const)),
-    );
   }
 
   return { resolve };

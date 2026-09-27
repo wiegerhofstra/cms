@@ -4,6 +4,7 @@ import { type Db } from "@/db";
 import { contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions } from "@/db/schema";
 import { CmsError as ApiError } from "@/lib/cms/errors";
 import { isEmptyRichTextDocument } from "@/lib/rich-text";
+import { isValidTimeValue } from "./time";
 
 type ContentModelFieldRow = typeof contentModelFields.$inferSelect;
 type EntryReadDb = Pick<Db, "select">;
@@ -76,6 +77,7 @@ export async function validateEntryData(
 
   await validateSlugFields(db, tenantId, modelId, fields, data, excludeEntryId);
   validateUrlFields(fields, data);
+  validateTimeFields(fields, data);
 }
 
 export async function validateEntryForPublish(db: EntryReadDb, tenantId: string, entryId: string): Promise<void> {
@@ -102,6 +104,7 @@ export async function validateEntryDataForPublish(
 
   await validateSlugFields(db, tenantId, modelId, fields, data, excludeEntryId);
   validateUrlFields(fields, data);
+  validateTimeFields(fields, data);
 
   for (const field of fields) {
     const value = data[field.key];
@@ -113,6 +116,14 @@ export async function validateEntryDataForPublish(
     if (field.type === "component" && !isEmptyValue(value)) {
       const targets = await db.select({ targetModelId: contentModelFieldTargets.targetModelId }).from(contentModelFieldTargets).where(eq(contentModelFieldTargets.fieldId, field.id));
       await validateComponentValue(db, tenantId, targets.map((target) => target.targetModelId), field.isList, value);
+    }
+  }
+}
+
+function validateTimeFields(fields: ContentModelFieldRow[], data: Record<string, unknown>): void {
+  for (const field of fields) {
+    if (field.type === "time" && !isValidTimeValue(data[field.key])) {
+      throw new ApiError("VALIDATION_ERROR", `Time field must use HH:mm (00:00–23:59): ${field.key}`);
     }
   }
 }

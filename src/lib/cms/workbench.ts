@@ -27,6 +27,7 @@ import { getEnv } from "@/lib/env";
 import { deleteS3Object, presignRead, presignUpload } from "@/lib/storage/s3";
 import { setActiveTenantId } from "@/lib/tenant/active-tenant";
 import { createEntryRevision, getActiveModel, getTenantEntry, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
+import { referencedAssetIds } from "@/modules/entries/assets";
 import { childEntrySchema, entryDataSchema, entryStatusSchema, reorderChildrenSchema, updateEntrySchema } from "@/modules/entries/validation";
 import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields";
 import { createModelSchema, fieldInputSchema, modelStatusSchema, moveFieldSchema, updateFieldSchema, updateModelSchema } from "@/modules/models/validation";
@@ -187,6 +188,17 @@ export async function getWorkbenchData(input: LoadWorkbenchDataInput = {}): Prom
       : Promise.resolve([]),
   ]);
   const componentReferences = shouldLoadModel ? await listComponentReferencesForContext(tenantContext, fields) : [];
+  if (entry && view === "entry-detail") {
+    const loadedIds = new Set(assetResults.assets.map((asset) => asset.id));
+    const missingIds = referencedAssetIds(fields, entry.data).filter((id) => !loadedIds.has(id));
+    if (missingIds.length) {
+      const referenced = await db.select().from(assets).where(and(
+        eq(assets.tenantId, tenantContext.activeTenantId), inArray(assets.id, missingIds),
+        eq(assets.status, "ready"), sql`${assets.deletedAt} is null`,
+      ));
+      assetResults.assets.push(...await assetsWithPreviews(referenced));
+    }
+  }
 
   return {
     me,
@@ -1121,7 +1133,11 @@ async function listAssetsForContext(
     db.select({ total: sql<number>`count(*)::int` }).from(assets).where(where),
   ]);
 
-  const assetsWithPreviews = await Promise.all(
+  return { assets: await assetsWithPreviews(rows), total: countRow?.total ?? 0 };
+}
+
+async function assetsWithPreviews(rows: (typeof assets.$inferSelect)[]): Promise<AssetWithPreview[]> {
+  return Promise.all(
     rows.map(async (asset) => {
       const serialized = serializeAsset(asset);
       const readUrl = serialized.status === "ready" ? await presignRead({ bucket: serialized.bucket, objectKey: serialized.objectKey, expiresIn: 300 }) : null;
@@ -1134,7 +1150,6 @@ async function listAssetsForContext(
     }),
   );
 
-  return { assets: assetsWithPreviews, total: countRow?.total ?? 0 };
 }
 
 function assetOrderBy(sort: AssetSort) {

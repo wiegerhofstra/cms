@@ -8,6 +8,7 @@ export const fieldTypeSchema = z.enum([
   "number",
   "boolean",
   "date",
+  "time",
   "enum",
   "asset",
   "component",
