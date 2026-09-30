@@ -10,15 +10,18 @@ import { CmsError } from "@/lib/cms/errors";
 import type { AccessTokenSummary } from "@/lib/cms/types";
 
 import { generateAccessToken } from "./token";
+import { accessTokenPermissionsSchema } from "./permissions";
 
 const createAccessTokenSchema = z.object({
   name: z.string().trim().min(1).max(120),
   tenantId: z.uuid(),
   expiresInDays: z.number().int().min(1).max(3650).nullable().default(90),
+  permissions: accessTokenPermissionsSchema.default(["content:read"]),
 });
 
 const updateAccessTokenSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  permissions: accessTokenPermissionsSchema.optional(),
 });
 
 export async function listAccessTokensForContext(context: CmsRequestContext): Promise<AccessTokenSummary[]> {
@@ -29,6 +32,7 @@ export async function listAccessTokensForContext(context: CmsRequestContext): Pr
       id: accessTokens.id,
       name: accessTokens.name,
       tokenHint: accessTokens.tokenHint,
+      permissions: accessTokens.permissions,
       tenantId: accessTokens.tenantId,
       tenantSlug: tenants.slug,
       tenantName: tenants.name,
@@ -49,6 +53,7 @@ export async function listAccessTokensForContext(context: CmsRequestContext): Pr
     id: row.id,
     name: row.name,
     tokenHint: row.tokenHint,
+    permissions: row.permissions,
     tenant: {
       id: row.tenantId,
       slug: row.tenantSlug,
@@ -79,6 +84,7 @@ export async function createAccessToken(input: unknown) {
       name: data.name,
       tokenHash: generated.tokenHash,
       tokenHint: generated.tokenHint,
+      permissions: data.permissions,
       createdBy: context.user.id,
       expiresAt,
     })
@@ -95,7 +101,7 @@ export async function updateAccessToken(accessTokenId: string, input: unknown) {
 
   const [updated] = await db
     .update(accessTokens)
-    .set({ name: data.name, updatedAt: new Date() })
+    .set({ name: data.name, ...(data.permissions ? { permissions: data.permissions } : {}), updatedAt: new Date() })
     .where(eq(accessTokens.id, parseUuid(accessTokenId)))
     .returning({ id: accessTokens.id });
   if (!updated) throw new CmsError("NOT_FOUND", "Access token was not found");

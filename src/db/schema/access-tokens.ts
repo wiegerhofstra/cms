@@ -14,6 +14,7 @@ export const accessTokens = pgTable(
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),
     tokenHint: text("token_hint").notNull(),
+    permissions: text("permissions").array().notNull().default(["content:read"]),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),

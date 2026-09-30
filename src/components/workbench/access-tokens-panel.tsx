@@ -22,9 +22,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { AccessTokenSummary, TenantSummary } from "@/lib/cms/types";
+import type { AccessTokenPermission } from "@/modules/access-tokens/permissions";
 
 import { createAccessTokenAction, revokeAccessTokenAction, updateAccessTokenAction } from "./actions";
 
@@ -54,7 +56,7 @@ export function AccessTokensPanel({ accessTokens, tenants }: AccessTokensPanelPr
     });
   }
 
-  function createToken(input: { name: string; tenantId: string; expiresInDays: number | null }) {
+  function createToken(input: { name: string; tenantId: string; expiresInDays: number | null; permissions: AccessTokenPermission[] }) {
     return new Promise<boolean>((resolve) => {
       startTransition(async () => {
         try {
@@ -78,8 +80,8 @@ export function AccessTokensPanel({ accessTokens, tenants }: AccessTokensPanelPr
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <CardTitle className="flex items-center gap-2"><KeyRound /> Content API access</CardTitle>
-                <CardDescription>Create tenant-scoped bearer tokens for published, read-only content delivery.</CardDescription>
+                <CardTitle className="flex items-center gap-2"><KeyRound /> API access</CardTitle>
+                <CardDescription>Create tenant-scoped bearer tokens for content delivery and email sending.</CardDescription>
               </div>
               <CreateAccessTokenDialog
                 isPending={isPending}
@@ -95,6 +97,7 @@ export function AccessTokensPanel({ accessTokens, tenants }: AccessTokensPanelPr
                   <TableHead>Token</TableHead>
                   <TableHead>Tenant</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Permissions</TableHead>
                   <TableHead>Last used</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -105,8 +108,8 @@ export function AccessTokensPanel({ accessTokens, tenants }: AccessTokensPanelPr
                 ))}
                 {!accessTokens.length ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                      No access tokens. Create one when an application is ready to consume published content.
+                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                      No access tokens. Create one when an application is ready to use the API.
                     </TableCell>
                   </TableRow>
                 ) : null}
@@ -159,20 +162,22 @@ function CreateAccessTokenDialog({
   tenants,
 }: {
   isPending: boolean;
-  onCreate: (input: { name: string; tenantId: string; expiresInDays: number | null }) => Promise<boolean>;
+  onCreate: (input: { name: string; tenantId: string; expiresInDays: number | null; permissions: AccessTokenPermission[] }) => Promise<boolean>;
   tenants: TenantSummary[];
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [tenantId, setTenantId] = useState("");
   const [expiry, setExpiry] = useState("90");
+  const [permissions, setPermissions] = useState<AccessTokenPermission[]>(["content:read"]);
 
   async function create() {
-    const created = await onCreate({ name, tenantId, expiresInDays: expiry === "never" ? null : Number(expiry) });
+    const created = await onCreate({ name, tenantId, expiresInDays: expiry === "never" ? null : Number(expiry), permissions });
     if (!created) return;
     setName("");
     setTenantId("");
     setExpiry("90");
+    setPermissions(["content:read"]);
     setOpen(false);
   }
 
@@ -184,7 +189,7 @@ function CreateAccessTokenDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create access token</DialogTitle>
-          <DialogDescription>The token can read published content from one tenant.</DialogDescription>
+          <DialogDescription>Choose which operations this token can perform for one tenant.</DialogDescription>
         </DialogHeader>
         <FieldGroup>
           <Field>
@@ -217,9 +222,10 @@ function CreateAccessTokenDialog({
             </Select>
             <FieldDescription>Expired tokens stop working immediately.</FieldDescription>
           </Field>
+          <TokenPermissions id="create-token" permissions={permissions} onChange={setPermissions} disabled={isPending} />
         </FieldGroup>
         <DialogFooter>
-          <Button disabled={isPending || !name.trim() || !tenantId} onClick={create}>
+          <Button disabled={isPending || !name.trim() || !tenantId || !permissions.length} onClick={create}>
             <Plus data-icon="inline-start" /> Create token
           </Button>
         </DialogFooter>
@@ -256,6 +262,7 @@ function AccessTokenRow({
         <Badge variant={status === "active" ? "default" : "secondary"}>{status}</Badge>
         <p className="mt-1 text-xs text-muted-foreground">{accessToken.expiresAt ? `Expires ${formatDate(accessToken.expiresAt)}` : "No expiration"}</p>
       </TableCell>
+      <TableCell><div className="flex flex-wrap gap-1">{accessToken.permissions.map((permission) => <Badge key={permission} variant="outline">{permission}</Badge>)}</div></TableCell>
       <TableCell>{accessToken.lastUsedAt ? formatDate(accessToken.lastUsedAt) : "Never"}</TableCell>
       <TableCell>
         <div className="flex justify-end gap-1">
@@ -278,28 +285,30 @@ function RenameAccessTokenDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(accessToken.name);
+  const [permissions, setPermissions] = useState<AccessTokenPermission[]>(accessToken.permissions.filter((value): value is AccessTokenPermission => value === "content:read" || value === "email:send"));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="icon-sm" variant="ghost"><Pencil /><span className="sr-only">Rename {accessToken.name}</span></Button>
+        <Button size="icon-sm" variant="ghost" disabled={isPending}><Pencil /><span className="sr-only">Edit {accessToken.name}</span></Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename access token</DialogTitle>
-          <DialogDescription>Use a name that identifies the application or environment using this token.</DialogDescription>
+          <DialogTitle>Edit access token</DialogTitle>
+          <DialogDescription>Update the name and permissions. Permission changes take effect immediately.</DialogDescription>
         </DialogHeader>
         <FieldGroup>
           <Field>
             <FieldLabel htmlFor={`rename-token-${accessToken.id}`}>Name</FieldLabel>
             <Input id={`rename-token-${accessToken.id}`} value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
+          <TokenPermissions id={accessToken.id} permissions={permissions} onChange={setPermissions} disabled={isPending} />
         </FieldGroup>
         <DialogFooter>
           <Button
-            disabled={isPending || !name.trim()}
+            disabled={isPending || !name.trim() || !permissions.length}
             onClick={async () => {
-              const renamed = await run(async () => { await updateAccessTokenAction(accessToken.id, { name }); }, "Access token renamed");
+              const renamed = await run(async () => { await updateAccessTokenAction(accessToken.id, { name, permissions }); }, "Access token updated");
               if (renamed) setOpen(false);
             }}
           >
@@ -339,6 +348,19 @@ function RevokeAccessTokenButton({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+function TokenPermissions({ id, permissions, onChange, disabled }: {
+  id: string; permissions: AccessTokenPermission[]; onChange: (permissions: AccessTokenPermission[]) => void; disabled: boolean;
+}) {
+  return <fieldset className="grid gap-3" disabled={disabled}>
+    <legend className="mb-3 text-sm font-medium">Permissions</legend>
+    {(["content:read", "email:send"] as const).map((permission) => <div key={permission} className="flex items-center gap-2">
+      <Checkbox id={`${id}-${permission}`} checked={permissions.includes(permission)} onCheckedChange={(checked) => onChange(checked === true ? [...permissions, permission] : permissions.filter((value) => value !== permission))} />
+      <label htmlFor={`${id}-${permission}`} className="text-sm">{permission === "content:read" ? "Read published content" : "Send email"} <span className="text-xs text-muted-foreground">({permission})</span></label>
+    </div>)}
+    <p className="text-xs text-muted-foreground">Select at least one permission. Email also requires enabled SMTP settings for the tenant.</p>
+  </fieldset>;
 }
 
 function accessTokenStatus(accessToken: AccessTokenSummary): "active" | "expired" | "revoked" {

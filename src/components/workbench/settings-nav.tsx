@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Braces, Building2, Check, KeyRound, Settings, Users } from "lucide-react";
+import { Braces, Building2, Check, KeyRound, Mail, Settings, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ const settingsLinks = [
   { href: "/app/settings/users", label: "Users", icon: Users },
   { href: "/app/settings/tenants", label: "Tenants", icon: Building2 },
   { href: "/app/settings/auth", label: "Auth", icon: KeyRound },
+  { href: "/app/settings/email", label: "Email", icon: Mail },
   { href: "/app/settings/api", label: "API", icon: Braces },
 ];
 

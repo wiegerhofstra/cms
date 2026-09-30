@@ -22,6 +22,10 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Content API
 
+For per-tenant SMTP setup and the authenticated email sending endpoint, see
+[the email guide](docs/email.md). Configure SMTP under **Settings → Email** and
+grant API tokens the explicit `email:send` permission under **Settings → Auth**.
+
 For the Ommelanden model setup and legacy field mapping, see
 [the migration guide](docs/ommelanden-migration.md).
 The [content import guide](docs/ommelanden-content-import.md) records the completed

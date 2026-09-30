@@ -7,6 +7,7 @@ import { accessTokens, tenants } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
 
 import { hashAccessToken } from "./token";
+import type { AccessTokenPermission } from "./permissions";
 
 export type AccessTokenPrincipal = {
   accessTokenId: string;
@@ -14,7 +15,7 @@ export type AccessTokenPrincipal = {
   tenantSlug: string;
 };
 
-export async function authenticateAccessToken(request: Request, tenantSlug: string): Promise<AccessTokenPrincipal> {
+export async function authenticateAccessToken(request: Request, tenantSlug: string, permission: AccessTokenPermission = "content:read"): Promise<AccessTokenPrincipal> {
   const token = bearerToken(request.headers.get("authorization"));
   if (!token) throw new CmsError("UNAUTHORIZED", "A valid bearer token is required");
 
@@ -26,6 +27,7 @@ export async function authenticateAccessToken(request: Request, tenantSlug: stri
       expiresAt: accessTokens.expiresAt,
       revokedAt: accessTokens.revokedAt,
       lastUsedAt: accessTokens.lastUsedAt,
+      permissions: accessTokens.permissions,
     })
     .from(accessTokens)
     .innerJoin(tenants, eq(accessTokens.tenantId, tenants.id))
@@ -36,6 +38,7 @@ export async function authenticateAccessToken(request: Request, tenantSlug: stri
     throw new CmsError("UNAUTHORIZED", "A valid bearer token is required");
   }
   if (record.tenantSlug !== tenantSlug) throw new CmsError("FORBIDDEN", "This token cannot access the requested tenant");
+  if (!record.permissions.includes(permission)) throw new CmsError("FORBIDDEN", `This token requires the ${permission} permission`);
 
   const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
   if (!record.lastUsedAt || record.lastUsedAt < staleBefore) {

@@ -169,8 +169,8 @@ export function ApiReferencePanel({
       <section aria-labelledby="available-endpoints" className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 id="available-endpoints" className="text-lg font-semibold">Available endpoints</h2>
-            <p className="text-sm text-muted-foreground">All endpoints are read-only and return JSON.</p>
+            <h2 id="available-endpoints" className="text-lg font-semibold">Content endpoints</h2>
+            <p className="text-sm text-muted-foreground">Content endpoints are read-only and require the content:read permission.</p>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <KeyRound className="size-3.5" /> Bearer authentication required
@@ -181,6 +181,20 @@ export function ApiReferencePanel({
           <EndpointCard key={endpoint.id} endpoint={endpoint} tenantSlug={tenantSlug} token={token} />
         ))}
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Send email</CardTitle>
+          <CardDescription>Submit an email using the selected tenant’s SMTP settings and a token with the email:send permission.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm">
+          <code className="break-all font-mono">POST /api/email/{tenantSlug || "{tenantSlug}"}/send</code>
+          <p className="text-muted-foreground">Send JSON with to, subject and text. Optional fields: from, replyTo and html. The from address must be allowed in the tenant’s settings; omit it to use the default sender.</p>
+          <pre className="overflow-x-auto rounded-xl bg-muted p-4 font-mono text-xs">{JSON.stringify({ to: "recipient@example.com", subject: "Hello", text: "Hello from the website.", html: "<p>Hello from the website.</p>" }, null, 2)}</pre>
+          <p className="text-muted-foreground">Use Authorization: Bearer and Content-Type: application/json. Supports one recipient per message, up to 512 KiB per request and 30 attempts per minute per tenant. Success returns data.messageId and data.status = &quot;accepted&quot;, confirming SMTP submission.</p>
+          <Link href="/app/settings/email" className="underline underline-offset-4">Configure email and send a test</Link>
+        </CardContent>
+      </Card>
 
       <Card size="sm">
         <CardContent className="flex gap-3">

@@ -31,14 +31,15 @@ import {
   updateModel,
 } from "@/lib/cms/workbench";
 import { createAccessToken, revokeAccessToken, updateAccessToken } from "@/modules/access-tokens/service";
+import type { AccessTokenPermission } from "@/modules/access-tokens/permissions";
 
-export async function createAccessTokenAction(input: { name: string; tenantId: string; expiresInDays: number | null }) {
+export async function createAccessTokenAction(input: { name: string; tenantId: string; expiresInDays: number | null; permissions?: AccessTokenPermission[] }) {
   const result = await createAccessToken(input);
   refresh();
   return result;
 }
 
-export async function updateAccessTokenAction(accessTokenId: string, input: { name: string }) {
+export async function updateAccessTokenAction(accessTokenId: string, input: { name: string; permissions?: AccessTokenPermission[] }) {
   const result = await updateAccessToken(accessTokenId, input);
   refresh();
   return result;

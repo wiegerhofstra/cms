@@ -64,6 +64,13 @@
       "when": 1790493051042,
       "tag": "0008_time_of_day",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790798744498,
+      "tag": "0009_tenant_email",
+      "breakpoints": true
     }
   ]
 }

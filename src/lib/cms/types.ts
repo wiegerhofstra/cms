@@ -45,6 +45,7 @@ export type AccessTokenSummary = {
   id: string;
   name: string;
   tokenHint: string;
+  permissions: string[];
   tenant: TenantSummary;
   createdBy: { id: string; name: string } | null;
   expiresAt: string | null;
