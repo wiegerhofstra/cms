@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { TimePicker } from "@/components/ui/time-picker";
 import type { AssetWithPreview, ContentEntry, ContentField } from "@/lib/cms/types";
 import type { ComponentReferenceList } from "./types";
 import { RichTextEditor } from "./rich-text-editor";
@@ -92,12 +93,22 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
     );
   }
 
-  if (field.type === "date" || field.type === "time") {
+  if (field.type === "time") {
     return (
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-        <Input id={fieldId} type={field.type} step={field.type === "time" ? 60 : undefined} value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-        <FieldDescription>{field.key}{field.type === "time" ? ". Local time, in hours and minutes." : ""}</FieldDescription>
+        <TimePicker id={fieldId} label={field.label} value={stringValue(value)} required={field.required} describedBy={`${fieldId}-description`} onChange={onChange} />
+        <FieldDescription id={`${fieldId}-description`}>{field.key}. Local time in 24-hour format (00:00–23:59). Type two digits or use the arrow keys to choose.</FieldDescription>
+      </Field>
+    );
+  }
+
+  if (field.type === "date") {
+    return (
+      <Field>
+        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+        <Input id={fieldId} type="date" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
+        <FieldDescription>{field.key}</FieldDescription>
       </Field>
     );
   }
