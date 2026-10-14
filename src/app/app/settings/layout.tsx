@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { AppNav } from "@/components/workbench/app-nav";
 import { SettingsMenu } from "@/components/workbench/settings-nav";
+import { RevalidateButton } from "@/components/workbench/revalidate-button";
+import { isRevalidationConfigured } from "@/modules/revalidation/service";
 import { WorkbenchShellFallback } from "@/components/workbench/workbench-loading";
 import { getCmsPageData } from "@/lib/cms/ssr";
 
@@ -21,6 +23,7 @@ async function SettingsShell({ children }: { children: ReactNode }) {
   const tenantMenuName = activeMembership?.tenant.name ?? "CMS";
   const isAdmin = data.me.user.role === "admin";
   if (!isAdmin) notFound();
+  const canRevalidate = activeMembership ? await isRevalidationConfigured(activeMembership.tenantId) : false;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -38,7 +41,10 @@ async function SettingsShell({ children }: { children: ReactNode }) {
                 <p className="font-mono text-xs uppercase tracking-[0.26em] text-muted-foreground">Global administration</p>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight">Settings</h1>
               </div>
-              <SettingsMenu />
+              <div className="flex items-center gap-2">
+                {canRevalidate && activeMembership ? <RevalidateButton key={activeMembership.tenantId} tenantId={activeMembership.tenantId} tenantName={tenantMenuName} /> : null}
+                <SettingsMenu />
+              </div>
             </div>
           </header>
           <div className="grid gap-6 p-4 sm:p-6 lg:p-8">{children}</div>

@@ -22,6 +22,9 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Content API
 
+Configure a tenant’s website refresh endpoint under **Settings → Revalidation**.
+See [the revalidation guide](docs/revalidation.md) for setup and the request contract.
+
 For per-tenant SMTP setup and the authenticated email sending endpoint, see
 [the email guide](docs/email.md). Configure SMTP under **Settings → Email** and
 grant API tokens the explicit `email:send` permission under **Settings → Auth**.

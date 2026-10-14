@@ -4,3 +4,4 @@ export * from "./content";
 export * from "./assets";
 export * from "./access-tokens";
 export * from "./email";
+export * from "./revalidation";

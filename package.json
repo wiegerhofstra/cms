@@ -16,6 +16,7 @@
     "test:delivery": "node --experimental-strip-types --test src/modules/content-delivery/*.test.mjs",
     "test:email": "node --experimental-strip-types --test src/modules/email/email.test.mjs",
     "test:email:integration": "node --experimental-strip-types --test src/modules/email/integration.test.mjs",
+    "test:revalidation": "node --experimental-strip-types --test src/modules/revalidation/*.test.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
