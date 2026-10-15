@@ -1,11 +1,13 @@
 import { and, eq, inArray, max, ne, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { type Db } from "@/db";
-import { contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions, type EntryTranslations } from "@/db/schema";
+import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions, type EntryTranslations } from "@/db/schema";
 import { CmsError as ApiError } from "@/lib/cms/errors";
 import { isEmptyRichTextDocument } from "@/lib/rich-text";
 import { isLocalizedField, sanitizeTranslations, type TenantLocalization } from "@/modules/localization/locales";
 import { getTenantLocalization } from "@/modules/localization/tenant";
+import { allowedAssetTypes, describeAllowedAssetTypes, isAssetTypeAllowed } from "@/modules/uploads/asset-types";
 import { isValidTimeValue } from "./time";
 
 type ContentModelFieldRow = typeof contentModelFields.$inferSelect;
@@ -146,6 +148,37 @@ async function validateFieldFormats(
     validateSlugFormats(localizedFields, values, locale);
   }
   await validateSlugFields(db, tenantId, modelId, fields, data, translations, localization, excludeEntryId);
+  await validateAssetTypes(db, tenantId, fields, data, translations);
+}
+
+async function validateAssetTypes(
+  db: EntryReadDb,
+  tenantId: string,
+  fields: ContentModelFieldRow[],
+  data: Record<string, unknown>,
+  translations: EntryTranslations,
+): Promise<void> {
+  const selections = fields.flatMap((field) => {
+    const allowed = allowedAssetTypes(field.config);
+    if (field.type !== "asset" || !allowed.length) return [];
+    const values = [{ locale: undefined as string | undefined, value: data[field.key] }];
+    if (isLocalizedField(field)) values.push(...Object.entries(translations).map(([locale, localeValues]) => ({ locale, value: localeValues[field.key] })));
+    return values.flatMap(({ locale, value }) => (typeof value === "string" && z.uuid().safeParse(value).success ? [{ field, allowed, locale, assetId: value }] : []));
+  });
+  if (!selections.length) return;
+
+  const selectedAssets = await db
+    .select({ id: assets.id, mimeType: assets.mimeType, originalName: assets.originalName })
+    .from(assets)
+    .where(and(eq(assets.tenantId, tenantId), inArray(assets.id, [...new Set(selections.map((selection) => selection.assetId))])));
+  const assetsById = new Map(selectedAssets.map((asset) => [asset.id, asset]));
+
+  for (const { field, allowed, locale, assetId } of selections) {
+    const asset = assetsById.get(assetId);
+    if (asset && !isAssetTypeAllowed(allowed, { mimeType: asset.mimeType, name: asset.originalName })) {
+      throw new ApiError("VALIDATION_ERROR", `${asset.originalName} is not allowed in ${fieldName(field, locale)}. Allowed: ${describeAllowedAssetTypes(allowed)}`);
+    }
+  }
 }
 
 function validateTimeFields(fields: ContentModelFieldRow[], data: Record<string, unknown>): void {

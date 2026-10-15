@@ -234,7 +234,7 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
             <TabsTrigger value="revisions">Revisions</TabsTrigger>
           </TabsList>
           <TabsContent value="content">
-            <EntryForm fields={fields} assets={assets} componentReferences={componentReferences} localization={localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
+            <EntryForm tenantSlug={tenantSlug} fields={fields} assets={assets} componentReferences={componentReferences} localization={localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
           </TabsContent>
           <TabsContent value="revisions">
             <RevisionList revisions={revisions} />
@@ -325,7 +325,7 @@ export function EntryCreatePanel(props: {
         </div>
       </EditorBar>
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-        <EntryForm fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
+        <EntryForm tenantSlug={props.tenantSlug} fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
       </div>
       <EntryJsonDialog open={jsonOpen} onOpenChange={setJsonOpen} data={data} onApply={setData} />
     </EditorCard>

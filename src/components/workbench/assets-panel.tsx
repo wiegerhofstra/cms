@@ -15,7 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import type { AssetSort, AssetWithPreview } from "@/lib/cms/types";
-import { completeUploadAction, deleteAssetAction, presignUploadAction, updateAssetAction } from "./actions";
+import { deleteAssetAction, updateAssetAction } from "./actions";
+import { uploadAsset } from "./upload-asset";
 import { usePageTitle } from "./page-title";
 
 export function AssetsPanel({
@@ -349,15 +350,7 @@ export function AssetCreatePanel({ tenantSlug }: { tenantSlug: string }) {
 
   async function uploadFile() {
     if (!file) return;
-    const presigned = await presignUploadAction(tenantSlug, { filename: file.name, mimeType: file.type, fileSize: file.size });
-    const formData = new FormData();
-    for (const [key, value] of Object.entries(presigned.upload.fields)) {
-      formData.append(key, value);
-    }
-    formData.append("file", file);
-    const response = await fetch(presigned.upload.url, { method: "POST", body: formData });
-    if (!response.ok) throw new Error("S3 upload failed");
-    await completeUploadAction(tenantSlug, { uploadToken: presigned.uploadToken });
+    await uploadAsset(tenantSlug, file);
     setFile(null);
     router.push(`${appPath}/assets`);
     router.refresh();
@@ -370,7 +363,7 @@ export function AssetCreatePanel({ tenantSlug }: { tenantSlug: string }) {
         <CardDescription>Uses presign, direct S3 POST, then upload completion.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <Input type="file" accept="image/*,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+        <Input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
         <div className="flex flex-wrap gap-2">
           <Button disabled={isPending || !file} onClick={() => run(uploadFile, "Asset uploaded")}><Upload data-icon="inline-start" /> Upload</Button>
           <Button asChild variant="outline">

@@ -1149,7 +1149,7 @@ export async function presignAssetUpload(input: unknown, tenantSlug?: string) {
   if (!env.S3_BUCKET) throw new ApiError("INTERNAL_SERVER_ERROR", "S3_BUCKET is not configured");
 
   try {
-    assertAllowedUpload({ mimeType: data.mimeType, fileSize: data.fileSize, maxBytes: env.UPLOAD_MAX_BYTES });
+    assertAllowedUpload({ fileSize: data.fileSize, maxBytes: env.UPLOAD_MAX_BYTES });
   } catch (error) {
     throw new ApiError("VALIDATION_ERROR", error instanceof Error ? error.message : "Upload is not allowed");
   }
@@ -1197,7 +1197,8 @@ export async function completeAssetUpload(input: unknown, tenantSlug?: string) {
     .where(and(eq(assets.tenantId, context.activeTenantId), eq(assets.id, pendingAsset.id), eq(assets.status, "pending")))
     .returning();
   if (!asset) throw new ApiError("NOT_FOUND", "Pending asset was not found");
-  return { assetId: asset.id, asset: serializeAsset(asset) };
+  const [assetWithPreview] = await assetsWithPreviews([asset]);
+  return { assetId: asset.id, asset: assetWithPreview! };
 }
 
 async function listModelsForContext(context: TenantContext): Promise<ContentModel[]> {

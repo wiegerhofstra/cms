@@ -28,6 +28,7 @@ import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHe
 import { Textarea } from "@/components/ui/textarea";
 import type { ContentField, ContentModel, FieldInput, FieldType, TenantLocalization } from "@/lib/cms/types";
 import { isLocalizableFieldType, localeLabel } from "@/modules/localization/locales";
+import { allowedAssetTypes, assetTypeCategories, assetTypeLabel, describeAllowedAssetTypes, withAllowedAssetTypes, type AssetTypeCategory } from "@/modules/uploads/asset-types";
 import { defaultRichTextFeatures, richTextFeaturesFromConfig, withRichTextFeatures, type RichTextFeature, type RichTextFeatureConfig } from "@/lib/rich-text";
 import { createFieldAction, deleteFieldAction, moveFieldAction, updateFieldAction } from "./actions";
 import { fieldHelpText, formatJson, isHiddenField, parseJsonObject } from "./utils";
@@ -79,6 +80,7 @@ export function FieldEditor({ tenantSlug, models, modelId, localization }: { ten
   const [isList, setIsList] = useState(false);
   const [uniqueSlug, setUniqueSlug] = useState(false);
   const [enumOptions, setEnumOptions] = useState<EnumOption[]>([]);
+  const [assetTypes, setAssetTypes] = useState<AssetTypeCategory[]>([]);
   const [configJson, setConfigJson] = useState("{}");
   const [richTextFeatures, setRichTextFeatures] = useState<RichTextFeatureConfig>({ ...defaultRichTextFeatures });
 
@@ -96,6 +98,9 @@ export function FieldEditor({ tenantSlug, models, modelId, localization }: { ten
     }
     if (type === "enum") {
       config.options = serializeEnumOptions(enumOptions);
+    }
+    if (type === "asset") {
+      config = withAllowedAssetTypes(config, assetTypes);
     }
     config = withEditorConfig(config, helpText, hidden);
     return { key, label, type, required, config, isTitle, localized: localized && isLocalizableFieldType(type) };
@@ -115,6 +120,7 @@ export function FieldEditor({ tenantSlug, models, modelId, localization }: { ten
     setIsList(false);
     setUniqueSlug(false);
     setEnumOptions([]);
+    setAssetTypes([]);
     setConfigJson("{}");
     setRichTextFeatures({ ...defaultRichTextFeatures });
   }
@@ -208,6 +214,7 @@ export function FieldEditor({ tenantSlug, models, modelId, localization }: { ten
             )}
             {type === "rich_text" && <RichTextFeatureControls value={richTextFeatures} onChange={setRichTextFeatures} />}
             {type === "enum" && <EnumOptionsEditor value={enumOptions} onChange={setEnumOptions} />}
+            {type === "asset" && <AssetTypeControls value={assetTypes} onChange={setAssetTypes} />}
             {type === "slug" && (
               <label className="flex items-center gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
                 <Checkbox aria-label="Unique value" checked={uniqueSlug} onCheckedChange={(checked) => setUniqueSlug(checked === true)} />
@@ -353,7 +360,7 @@ function FieldActions({ tenantSlug, field, models, modelId, localization, isPend
 function EditFieldForm({ tenantSlug, field, models, modelId, localization, isPending, run, onSaved }: { tenantSlug: string; field: ContentField; models: ContentModel[]; modelId: string; localization: TenantLocalization; isPending: boolean; run: (action: () => Promise<unknown>, success: string, onSuccess?: () => void) => void; onSaved: () => void }) {
   const [label, setLabel] = useState(field.label);
   const [helpText, setHelpText] = useState(fieldHelpText(field));
-  const [config, setConfig] = useState(formatJson(withoutEditorConfig(field.type === "enum" ? withoutEnumOptions(field.config) : field.config)));
+  const [config, setConfig] = useState(formatJson(withoutEditorConfig(field.type === "enum" ? withoutEnumOptions(field.config) : field.type === "asset" ? withAllowedAssetTypes(field.config, []) : field.config)));
   const [required, setRequired] = useState(field.required);
   const [isTitle, setIsTitle] = useState(field.isTitle);
   const [hidden, setHidden] = useState(isHiddenField(field));
@@ -362,6 +369,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, localization, isPen
   const [isList, setIsList] = useState(field.isList);
   const [uniqueSlug, setUniqueSlug] = useState(field.config.unique === true);
   const [enumOptions, setEnumOptions] = useState<EnumOption[]>(enumOptionsFromConfig(field.config));
+  const [assetTypes, setAssetTypes] = useState<AssetTypeCategory[]>(allowedAssetTypes(field.config));
   const [richTextFeatures, setRichTextFeatures] = useState<RichTextFeatureConfig>(richTextFeaturesFromConfig(field.config));
 
   return (
@@ -376,6 +384,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, localization, isPen
       )}
       {field.type === "rich_text" && <RichTextFeatureControls value={richTextFeatures} onChange={setRichTextFeatures} />}
       {field.type === "enum" && <EnumOptionsEditor value={enumOptions} onChange={setEnumOptions} />}
+      {field.type === "asset" && <AssetTypeControls value={assetTypes} onChange={setAssetTypes} />}
       {field.type === "slug" && <FieldToggle checked={uniqueSlug} onCheckedChange={setUniqueSlug} title="Unique value" description="Prevent two entries from using the same slug." />}
       {field.type === "component" ? <Field><FieldLabel>Linked entries</FieldLabel><Select value={isList ? "multiple" : "single"} onValueChange={(value) => setIsList(value === "multiple")}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="single">Single entry</SelectItem><SelectItem value="multiple">Multiple entries</SelectItem></SelectGroup></SelectContent></Select></Field> : null}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -402,6 +411,9 @@ function EditFieldForm({ tenantSlug, field, models, modelId, localization, isPen
           }
           if (field.type === "enum") {
             nextConfig.options = serializeEnumOptions(enumOptions);
+          }
+          if (field.type === "asset") {
+            nextConfig = withAllowedAssetTypes(nextConfig, assetTypes);
           }
           nextConfig = withEditorConfig(nextConfig, helpText, hidden);
           await updateFieldAction(tenantSlug, modelId, field.id, { label, required, config: nextConfig, isTitle, localized });
@@ -479,6 +491,7 @@ function fieldSummary(field: ContentField): string {
     return `${count} option${count === 1 ? "" : "s"}`;
   }
   if (field.type === "slug" && field.config.unique === true) return "Unique values";
+  if (field.type === "asset" && allowedAssetTypes(field.config).length) return describeAllowedAssetTypes(allowedAssetTypes(field.config));
   if (Object.keys(withoutEditorConfig(field.config)).length > 0) return "Custom settings";
   return "";
 }
@@ -611,6 +624,25 @@ function RichTextFeatureControls({ className, value, onChange }: { className?: s
           </label>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AssetTypeControls({ value, onChange }: { value: AssetTypeCategory[]; onChange: (value: AssetTypeCategory[]) => void }) {
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium">Allowed file types</p>
+      <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-3">
+        {assetTypeCategories.map((category) => (
+          <label key={category} className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={value.includes(category)}
+              onCheckedChange={(checked) => onChange(checked === true ? [...value, category] : value.filter((item) => item !== category))}
+            /> {assetTypeLabel(category)}
+          </label>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{value.length ? `Editors can only pick ${describeAllowedAssetTypes(value).toLowerCase()}.` : "Nothing selected: any file type is allowed."}</p>
     </div>
   );
 }

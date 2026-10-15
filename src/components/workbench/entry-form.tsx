@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import Image from "next/image";
-import { ArrowDown, ArrowUp, ChevronRight, FileIcon, ImageIcon, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, FileIcon, ImageIcon, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,11 +19,14 @@ import { TimePicker } from "@/components/ui/time-picker";
 import type { AssetWithPreview, ContentEntry, ContentField, EntryTranslations, TenantLocalization } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { isEmptyLocalizedValue, isLocalizedField, localeLabel } from "@/modules/localization/locales";
+import { allowedAssetTypes, assetAcceptAttribute, describeAllowedAssetTypes, isAssetTypeAllowed } from "@/modules/uploads/asset-types";
 import type { ComponentReferenceList } from "./types";
 import { RichTextEditor } from "./rich-text-editor";
+import { uploadAsset } from "./upload-asset";
 import { entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, numberInputValue, parseJsonObject, stringValue } from "./utils";
 
 type EntryFormProps = {
+  tenantSlug: string;
   fields: ContentField[];
   assets: AssetWithPreview[];
   componentReferences: ComponentReferenceList[];
@@ -33,7 +37,17 @@ type EntryFormProps = {
   onTranslationsChange: (translations: EntryTranslations) => void;
 };
 
-export function EntryForm({ fields, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: EntryFormProps) {
+export function EntryForm({ tenantSlug, fields, assets: loadedAssets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: EntryFormProps) {
+  // Assets uploaded from this form show up right away, before the refreshed asset list arrives.
+  const [uploadedAssets, setUploadedAssets] = useState<AssetWithPreview[]>([]);
+  const assets = [...uploadedAssets.filter((asset) => !loadedAssets.some((loaded) => loaded.id === asset.id)), ...loadedAssets];
+
+  async function upload(file: File) {
+    const asset = await uploadAsset(tenantSlug, file);
+    setUploadedAssets((current) => [asset, ...current]);
+    return asset;
+  }
+
   if (!fields.length) {
     return (
       <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
@@ -59,12 +73,13 @@ export function EntryForm({ fields, assets, componentReferences, localization, d
           translations={translations}
           onChange={onChange}
           onTranslationsChange={onTranslationsChange}
+          onUpload={upload}
         />
       );
     }
 
     return (
-      <EntryFieldInput key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => onChange({ ...data, [field.key]: value })} />
+      <EntryFieldInput key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => onChange({ ...data, [field.key]: value })} onUpload={upload} />
     );
   }
 
@@ -88,7 +103,7 @@ export function EntryForm({ fields, assets, componentReferences, localization, d
 }
 
 /** One translatable field: the language switch picks which value the input edits. The default language lives in the entry data. */
-function LocalizedEntryField({ field, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: Omit<EntryFormProps, "fields"> & { field: ContentField }) {
+function LocalizedEntryField({ field, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange, onUpload }: Omit<EntryFormProps, "fields" | "tenantSlug"> & { field: ContentField; onUpload: (file: File) => Promise<AssetWithPreview> }) {
   const [locale, setLocale] = useState(localization.defaultLocale);
   const isDefault = locale === localization.defaultLocale;
   const value = isDefault ? data[field.key] : translations[locale]?.[field.key];
@@ -111,6 +126,7 @@ function LocalizedEntryField({ field, assets, componentReferences, localization,
       componentReferences={componentReferences}
       value={value}
       onChange={update}
+      onUpload={onUpload}
       placeholder={isDefault ? undefined : stringValue(data[field.key]) || undefined}
       note={isDefault ? undefined : `Leave empty to use the ${defaultLabel} value.`}
       labelAddon={<LocaleSwitch label={field.label} localization={localization} active={locale} translated={translatedLocales} onSelect={setLocale} />}
@@ -170,6 +186,7 @@ type EntryFieldInputProps = {
   componentReferences: ComponentReferenceList[];
   value: unknown;
   onChange: (value: unknown) => void;
+  onUpload: (file: File) => Promise<AssetWithPreview>;
   /** Distinguishes the input ids of a field shown in several languages. */
   idSuffix?: string;
   labelAddon?: ReactNode;
@@ -177,7 +194,7 @@ type EntryFieldInputProps = {
   note?: string;
 };
 
-function EntryFieldInput({ field, assets, componentReferences, value, onChange, idSuffix, labelAddon, placeholder, note }: EntryFieldInputProps) {
+function EntryFieldInput({ field, assets, componentReferences, value, onChange, onUpload, idSuffix, labelAddon, placeholder, note }: EntryFieldInputProps) {
   const fieldId = `entry-field-${field.id}${idSuffix ? `-${idSuffix}` : ""}`;
   const label = <EntryFieldLabel field={field} htmlFor={fieldId} addon={labelAddon} />;
 
@@ -254,7 +271,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange, 
   }
 
   if (field.type === "enum") return <EnumFieldInput field={field} value={value} onChange={onChange} />;
-  if (field.type === "asset") return <AssetFieldInput label={<EntryFieldLabel field={field} addon={labelAddon} />} field={field} assets={assets} value={value} onChange={onChange} note={note} />;
+  if (field.type === "asset") return <AssetFieldInput label={<EntryFieldLabel field={field} addon={labelAddon} />} field={field} assets={assets} value={value} onChange={onChange} onUpload={onUpload} note={note} />;
   if (field.type === "component") return <ComponentFieldInput field={field} referenceLists={componentReferences.filter((referenceList) => referenceList.fieldId === field.id)} value={value} onChange={onChange} />;
 
   return (
@@ -291,33 +308,133 @@ function EnumFieldInput({ field, value, onChange }: { field: ContentField; value
   );
 }
 
-function AssetFieldInput({ label, field, assets, value, onChange, note }: { label: ReactNode; field: ContentField; assets: AssetWithPreview[]; value: unknown; onChange: (value: unknown) => void; note?: string }) {
+function AssetFieldInput({ label, field, assets, value, onChange, onUpload, note }: { label: ReactNode; field: ContentField; assets: AssetWithPreview[]; value: unknown; onChange: (value: unknown) => void; onUpload: (file: File) => Promise<AssetWithPreview>; note?: string }) {
   const [open, setOpen] = useState(false);
-  const readyAssets = assets.filter((asset) => asset.status === "ready");
+  const [uploadingName, setUploadingName] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const allowedTypes = allowedAssetTypes(field.config);
+  const isAllowed = (asset: AssetWithPreview) => isAssetTypeAllowed(allowedTypes, { mimeType: asset.mimeType, name: asset.originalName });
+  const readyAssets = assets.filter((asset) => asset.status === "ready" && isAllowed(asset));
   const assetId = stringValue(value);
   const selectedAsset = assetId ? assets.find((asset) => asset.id === assetId) ?? null : null;
+  const uploading = uploadingName !== null;
 
   function selectAsset(nextAssetId: string) {
     onChange(nextAssetId);
     setOpen(false);
   }
 
+  function chooseFile() {
+    setOpen(false);
+    fileInputRef.current?.click();
+  }
+
+  async function upload(file: File) {
+    if (!isAssetTypeAllowed(allowedTypes, { mimeType: file.type, name: file.name })) {
+      toast.error(`${file.name} can't be used here. Allowed: ${describeAllowedAssetTypes(allowedTypes)}.`);
+      return;
+    }
+    setUploadingName(file.name);
+    try {
+      const asset = await onUpload(file);
+      onChange(asset.id);
+      toast.success(`${asset.originalName} uploaded`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setUploadingName(null);
+    }
+  }
+
+  function dragOver(event: DragEvent) {
+    if (uploading || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragging(true);
+  }
+
+  function drop(event: DragEvent) {
+    if (uploading || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files[0];
+    if (file) void upload(file);
+  }
+
+  const uploadButton = (
+    <Button type="button" size="sm" variant="outline" disabled={uploading} onClick={chooseFile}>
+      <Upload data-icon="inline-start" /> {assetId ? "Upload new" : "Upload file"}
+    </Button>
+  );
+
   return (
     <Field>
       {label}
-      {assetId ? <SelectedAssetCard assetId={assetId} asset={selectedAsset} onChange={() => setOpen(true)} onRemove={() => onChange(null)} /> : null}
-      {!assetId ? (
-        <Button type="button" variant="outline" className="w-fit" disabled={!readyAssets.length} onClick={() => setOpen(true)}>
-          <Plus data-icon="inline-start" /> Select asset
-        </Button>
+      <div
+        className={cn("rounded-lg transition-shadow", dragging && "ring-2 ring-primary ring-offset-2 ring-offset-background")}
+        onDragOver={dragOver}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+        onDrop={drop}
+      >
+        {assetId && !uploading ? (
+          <SelectedAssetCard
+            assetId={assetId}
+            asset={selectedAsset}
+            actions={
+              <>
+                <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>Change</Button>
+                {uploadButton}
+                <Button type="button" size="sm" variant="ghost" onClick={() => onChange(null)}>Remove</Button>
+              </>
+            }
+          />
+        ) : (
+          <div className={cn("flex flex-wrap items-center gap-2 rounded-lg border border-dashed p-3 text-sm", dragging && "border-primary bg-primary/5")}>
+            {uploading ? (
+              <p className="flex min-w-0 items-center gap-2 text-muted-foreground" role="status">
+                <Loader2 className="size-4 shrink-0 animate-spin" /> <span className="truncate">Uploading {uploadingName}…</span>
+              </p>
+            ) : (
+              <>
+                <Button type="button" size="sm" variant="outline" disabled={!readyAssets.length} onClick={() => setOpen(true)}>
+                  <Plus data-icon="inline-start" /> Select asset
+                </Button>
+                {uploadButton}
+                <span className="text-xs text-muted-foreground">or drop a file here</span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={assetAcceptAttribute(allowedTypes)}
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          // Reset so picking the same file again still triggers a change.
+          event.target.value = "";
+          if (file) void upload(file);
+        }}
+      />
+      <AssetPickerDialog open={open} onOpenChange={setOpen} assets={readyAssets} selectedAssetId={assetId} onSelect={selectAsset} onUpload={chooseFile} />
+      {selectedAsset && !isAllowed(selectedAsset) ? (
+        <FieldDescription className="text-destructive">This file type is not allowed in this field. Choose or upload another file.</FieldDescription>
       ) : null}
-      <AssetPickerDialog open={open} onOpenChange={setOpen} assets={readyAssets} selectedAssetId={assetId} onSelect={selectAsset} />
-      <FieldHelp field={field} note={note} />
+      <FieldHelp
+        field={field}
+        hint={allowedTypes.length ? `${describeAllowedAssetTypes(allowedTypes)} only. Upload a file here or drop it onto the field.` : "Upload any file here or drop it onto the field."}
+        note={note}
+      />
     </Field>
   );
 }
 
-function SelectedAssetCard({ assetId, asset, onChange, onRemove }: { assetId: string; asset: AssetWithPreview | null; onChange: () => void; onRemove: () => void }) {
+function SelectedAssetCard({ assetId, asset, actions }: { assetId: string; asset: AssetWithPreview | null; actions: ReactNode }) {
   if (!asset) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/60 p-3 text-sm">
@@ -331,10 +448,7 @@ function SelectedAssetCard({ assetId, asset, onChange, onRemove }: { assetId: st
             <p className="text-xs text-muted-foreground">This id is not in the current tenant asset list.</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={onChange}>Change</Button>
-          <Button type="button" size="sm" variant="ghost" onClick={onRemove}>Remove</Button>
-        </div>
+        <div className="flex flex-wrap gap-2">{actions}</div>
       </div>
     );
   }
@@ -368,15 +482,12 @@ function SelectedAssetCard({ assetId, asset, onChange, onRemove }: { assetId: st
           </div>
         </div>
       </div>
-      <div className="flex gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={onChange}>Change</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onRemove}>Remove</Button>
-      </div>
+      <div className="flex flex-wrap gap-2">{actions}</div>
     </div>
   );
 }
 
-function AssetPickerDialog({ open, onOpenChange, assets, selectedAssetId, onSelect }: { open: boolean; onOpenChange: (open: boolean) => void; assets: AssetWithPreview[]; selectedAssetId: string; onSelect: (assetId: string) => void }) {
+function AssetPickerDialog({ open, onOpenChange, assets, selectedAssetId, onSelect, onUpload }: { open: boolean; onOpenChange: (open: boolean) => void; assets: AssetWithPreview[]; selectedAssetId: string; onSelect: (assetId: string) => void; onUpload: () => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="p-0 sm:max-w-2xl">
@@ -398,6 +509,10 @@ function AssetPickerDialog({ open, onOpenChange, assets, selectedAssetId, onSele
             </CommandGroup>
           </CommandList>
         </Command>
+        <Separator />
+        <DialogFooter className="px-4 pb-4">
+          <Button type="button" variant="outline" onClick={onUpload}><Upload data-icon="inline-start" /> Upload new file</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

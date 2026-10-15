@@ -335,7 +335,7 @@ The delivery resolver iterates stored data keys. A newly added field may be abse
 
 Assets and components are normalized as described below. Other fields (including rich text) largely pass through stored JSON. Primitive types, date formats and enum membership are NOT comprehensively enforced at delivery time. models.schema.json therefore uses x-cms-editorSchema for intended values, alongside permissive wire schemas for raw fields. types.ts provides accurate unknown raw fields plus ExpectedDataByModel as a guide for your validation. A TypeScript cast is not runtime validation.
 
-Expected editor values: text/url/slug are strings; date is a YYYY-MM-DD string (not a timestamp); time is a local HH:mm string without seconds or a timezone; number is a number; boolean is a boolean; enum is a configured option value (not its label); rich_text is a Tiptap JSON document. Optional inputs may also be null, absent or an empty string. See each field's config for enum options, uniqueness, and rich-text features. isList applies to component fields only. Never infer a default from a missing value.
+Expected editor values: text/url/slug are strings; date is a YYYY-MM-DD string (not a timestamp); time is a local HH:mm string without seconds or a timezone; number is a number; boolean is a boolean; enum is a configured option value (not its label); rich_text is a Tiptap JSON document. Optional inputs may also be null, absent or an empty string. See each field's config for enum options, uniqueness, allowed asset file types (allowedTypes: image, video, audio, pdf, document, archive; absent means any file), and rich-text features. isList applies to component fields only. Never infer a default from a missing value.
 
 ## Components
 
