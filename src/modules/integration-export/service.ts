@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { contentModelFields, contentModelFieldTargets, contentModels, tenants } from "@/db/schema";
+import { contentModelFields, contentModelFieldTargets, contentModels, tenantRevalidationSettings, tenants } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
 
 import { generateIntegrationFiles } from "./generate";
@@ -14,6 +14,8 @@ export async function exportTenantIntegration(tenantSlug: string, origin: string
     const [tenant] = await tx.select({ id: tenants.id, name: tenants.name, slug: tenants.slug, defaultLocale: tenants.defaultLocale, locales: tenants.locales })
       .from(tenants).where(eq(tenants.slug, tenantSlug)).limit(1);
     if (!tenant) throw new CmsError("NOT_FOUND", "Tenant was not found");
+    const [revalidation] = await tx.select({ url: tenantRevalidationSettings.url })
+      .from(tenantRevalidationSettings).where(eq(tenantRevalidationSettings.tenantId, tenant.id)).limit(1);
 
     const models = await tx.select({
       id: contentModels.id, name: contentModels.name, slug: contentModels.slug, status: contentModels.status,
@@ -29,6 +31,7 @@ export async function exportTenantIntegration(tenantSlug: string, origin: string
     return generateIntegrationFiles({
       tenant: { name: tenant.name, slug: tenant.slug, defaultLocale: tenant.defaultLocale, locales: tenant.locales },
       origin,
+      revalidation: { configured: Boolean(revalidation), url: revalidation?.url ?? null },
       models: models.map((model) => ({
         ...model,
         fields: fields.filter((field) => field.modelId === model.id).map((field) => ({

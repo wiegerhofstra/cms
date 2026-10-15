@@ -22,4 +22,8 @@ Use HTTPS for deployed endpoints. Requests time out after 15 seconds and do not
 follow redirects. Any successful HTTP status is accepted; other statuses are
 reported without exposing the endpoint’s response body.
 
+Website developers find this contract in the integration bundle (Settings → API): the guide's
+"Caching and revalidation" section, the `revalidate` webhook in `openapi.json`, a ready-made
+`revalidation.ts` handler, and a Next.js route example.
+
 Run `npm run test:revalidation` for credential, validation, and HTTP contract tests.

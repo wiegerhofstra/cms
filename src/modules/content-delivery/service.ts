@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
 import { presignRead } from "@/lib/storage/s3";
-import { canonicalLocale, localizeEntryData, type TenantLocalization } from "@/modules/localization/locales";
+import { canonicalLocale, isLocalizedField, localizeEntryData, type TenantLocalization } from "@/modules/localization/locales";
 import { getTenantLocalization } from "@/modules/localization/tenant";
 import { createRichTextAssetResolver } from "./rich-text";
 
@@ -59,6 +59,8 @@ export async function listPublishedEntries(input: {
   cursor: string | null;
   maxDepth: number;
   locale: string | null;
+  slug?: string | null;
+  slugField?: string | null;
 }) {
   const [model, locale] = await Promise.all([getModelBySlug(input.tenantId, input.modelSlug), resolveDeliveryLocale(input.tenantId, input.locale)]);
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
@@ -69,6 +71,10 @@ export async function listPublishedEntries(input: {
     isNull(contentEntries.deletedAt),
     isNull(contentEntries.parentEntryId),
   ];
+  if (input.slug !== null && input.slug !== undefined) {
+    const field = slugFilterField(await getModelFields(input.tenantId, model.id), input.slugField ?? null);
+    filters.push(sql`${slugValueSql(field, locale)} = ${input.slug}`);
+  }
   if (cursor) {
     filters.push(sql`(${contentEntries.createdAt}, ${contentEntries.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`);
   }
@@ -123,12 +129,60 @@ export async function getPublishedEntry(input: {
   };
 }
 
+/** A ready asset by ID with a fresh read URL, so integrations can store asset IDs instead of expiring URLs. */
+export async function getDeliveryAsset(tenantId: string, assetId: string) {
+  const id = z.uuid().safeParse(assetId);
+  if (!id.success) throw new CmsError("BAD_REQUEST", "assetId must be a UUID");
+  const [asset] = await db
+    .select()
+    .from(assets)
+    .where(and(eq(assets.tenantId, tenantId), eq(assets.id, id.data), eq(assets.status, "ready"), isNull(assets.deletedAt)))
+    .limit(1);
+  if (!asset) throw new CmsError("NOT_FOUND", "Asset was not found");
+  return serializeDeliveryAsset(asset);
+}
+
+async function serializeDeliveryAsset(asset: typeof assets.$inferSelect) {
+  return {
+    id: asset.id,
+    originalName: asset.originalName,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    imageWidth: asset.imageWidth,
+    imageHeight: asset.imageHeight,
+    url: await presignRead({ bucket: asset.bucket, objectKey: asset.objectKey, expiresIn: 300 }),
+  };
+}
+
 export function parseDeliveryQuery(url: string, includePagination: boolean) {
   const searchParams = new URL(url).searchParams;
   const maxDepth = parseBoundedInteger(searchParams.get("maxDepth"), 1, 1, 5, "maxDepth");
   const limit = includePagination ? parseBoundedInteger(searchParams.get("limit"), 20, 1, 100, "limit") : 1;
+  const slug = includePagination ? searchParams.get("slug") : null;
+  const slugField = includePagination ? searchParams.get("slugField") : null;
+  if (slug !== null && (!slug || slug.length > 200)) throw new CmsError("BAD_REQUEST", "slug must contain 1 to 200 characters");
+  if (slugField !== null && slug === null) throw new CmsError("BAD_REQUEST", "slugField can only be used together with slug");
 
-  return { maxDepth, limit, cursor: includePagination ? searchParams.get("cursor") : null, locale: searchParams.get("locale") };
+  return { maxDepth, limit, cursor: includePagination ? searchParams.get("cursor") : null, locale: searchParams.get("locale"), slug, slugField };
+}
+
+/** The slug field to filter on: the one named by slugField, or the model's only slug field. */
+function slugFilterField(fields: FieldRow[], slugField: string | null): FieldRow {
+  const slugFields = fields.filter((field) => field.type === "slug");
+  if (slugField !== null) {
+    const field = slugFields.find((item) => item.key === slugField);
+    if (!field) throw new CmsError("BAD_REQUEST", `slugField must be a slug field of this model${slugFields.length ? `: ${slugFields.map((item) => item.key).join(", ")}` : ""}`);
+    return field;
+  }
+  if (slugFields.length === 1) return slugFields[0]!;
+  if (!slugFields.length) throw new CmsError("BAD_REQUEST", "This model has no slug field to filter on");
+  throw new CmsError("BAD_REQUEST", `This model has several slug fields; pass slugField: ${slugFields.map((item) => item.key).join(", ")}`);
+}
+
+/** The slug an entry shows in the locale: its translation for translatable fields, falling back to the default value. */
+function slugValueSql(field: FieldRow, { locale, localization }: DeliveryLocale) {
+  if (!isLocalizedField(field) || locale === localization.defaultLocale) return sql`${contentEntries.data}->>${field.key}`;
+  return sql`coalesce(nullif(${contentEntries.translations}->${locale}->>${field.key}, ''), ${contentEntries.data}->>${field.key})`;
 }
 
 type DeliveryLocale = { locale: string; localization: TenantLocalization };
@@ -195,18 +249,7 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
         .from(assets)
         .where(and(eq(assets.tenantId, tenantId), eq(assets.id, assetId), eq(assets.status, "ready"), isNull(assets.deletedAt)))
         .limit(1)
-        .then(async ([asset]) => {
-          if (!asset) return null;
-          return {
-            id: asset.id,
-            originalName: asset.originalName,
-            mimeType: asset.mimeType,
-            sizeBytes: asset.sizeBytes,
-            imageWidth: asset.imageWidth,
-            imageHeight: asset.imageHeight,
-            url: await presignRead({ bucket: asset.bucket, objectKey: asset.objectKey, expiresIn: 300 }),
-          };
-        });
+        .then(([asset]) => (asset ? serializeDeliveryAsset(asset) : null));
       assetsById.set(assetId, result);
     }
     return result;

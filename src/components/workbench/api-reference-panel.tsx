@@ -11,25 +11,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cmsPublicUrl } from "@/lib/cms/public-url";
 import type { TenantSummary } from "@/lib/cms/types";
 
-type EndpointId = "models" | "model" | "entries" | "entry";
+type EndpointId = "models" | "model" | "entries" | "entry" | "asset";
 
 type EndpointDefinition = {
   id: EndpointId;
   title: string;
   description: string;
   path: string;
-  pathParameters: Array<{ key: "modelSlug" | "entryId"; label: string; placeholder: string; description: string }>;
+  pathParameters: Array<{ key: "modelSlug" | "entryId" | "assetId"; label: string; placeholder: string; description: string }>;
   queryParameters: Array<{
-    key: "limit" | "cursor" | "maxDepth" | "locale";
+    key: "limit" | "cursor" | "maxDepth" | "locale" | "slug" | "slugField";
     label: string;
     placeholder: string;
     description: string;
   }>;
 };
 
-type ParameterValues = Record<"modelSlug" | "entryId" | "limit" | "cursor" | "maxDepth" | "locale", string>;
+type ParameterValues = Record<"modelSlug" | "entryId" | "assetId" | "limit" | "cursor" | "maxDepth" | "locale" | "slug" | "slugField", string>;
 
 type ApiResult = {
   status: number | null;
@@ -70,6 +71,8 @@ const endpoints: EndpointDefinition[] = [
     queryParameters: [
       { key: "limit", label: "limit", placeholder: "20", description: "Entries per page, from 1 to 100. Defaults to 20." },
       { key: "cursor", label: "cursor", placeholder: "Cursor from the previous response", description: "Pass meta.nextCursor to request the next page." },
+      { key: "slug", label: "slug", placeholder: "about-us", description: "Only entries with this slug. Translatable slugs match the slug in the requested locale, falling back to the default language." },
+      { key: "slugField", label: "slugField", placeholder: "slug", description: "Which slug field to match. Only needed when the model has more than one slug field." },
       { key: "maxDepth", label: "maxDepth", placeholder: "1", description: "Component expansion depth, from 1 to 5. Defaults to 1." },
       { key: "locale", label: "locale", placeholder: "nl", description: "Language of translatable fields. Missing translations use the default value. Defaults to the tenant's default language." },
     ],
@@ -88,15 +91,28 @@ const endpoints: EndpointDefinition[] = [
       { key: "locale", label: "locale", placeholder: "nl", description: "Language of translatable fields. Missing translations use the default value. Defaults to the tenant's default language." },
     ],
   },
+  {
+    id: "asset",
+    title: "Get an asset",
+    description: "Returns one ready asset with a fresh download URL. Store asset IDs and resolve them here when serving media.",
+    path: "/api/content/{tenantSlug}/assets/{assetId}",
+    pathParameters: [
+      { key: "assetId", label: "Asset ID", placeholder: "00000000-0000-0000-0000-000000000000", description: "The asset's UUID, as found in entry data." },
+    ],
+    queryParameters: [],
+  },
 ];
 
 const emptyValues: ParameterValues = {
   modelSlug: "",
   entryId: "",
+  assetId: "",
   limit: "",
   cursor: "",
   maxDepth: "",
   locale: "",
+  slug: "",
+  slugField: "",
 };
 
 export function ApiReferencePanel({
@@ -288,7 +304,7 @@ function EndpointCard({ endpoint, tenantSlug, token }: { endpoint: EndpointDefin
   const relativeUrl = useMemo(() => buildRelativeUrl(endpoint, tenantSlug, values), [endpoint, tenantSlug, values]);
   const missingRequiredParameter = !tenantSlug || endpoint.pathParameters.some((parameter) => !values[parameter.key].trim());
   const curl = [
-    `curl '${relativeUrl}' \\`,
+    `curl '${cmsPublicUrl}${relativeUrl}' \\`,
     `  -H 'Authorization: Bearer ${token.trim() || "cms_at_..."}'`,
   ].join("\n");
 

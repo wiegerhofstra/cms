@@ -1,5 +1,6 @@
 import { getCmsContext, requireAdmin } from "@/lib/cms/context";
 import { CmsError } from "@/lib/cms/errors";
+import { cmsPublicUrl } from "@/lib/cms/public-url";
 import { createIntegrationArchive } from "@/modules/integration-export/archive";
 import { exportTenantIntegration } from "@/modules/integration-export/service";
 
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     }
     const format = url.searchParams.get("format") ?? "bundle";
     if (format !== "bundle" && format !== "guide") throw new CmsError("BAD_REQUEST", "format must be bundle or guide");
-    const files = await exportTenantIntegration(tenantSlug, url.origin);
+    const files = await exportTenantIntegration(tenantSlug, cmsPublicUrl);
     if (format === "guide") {
       headers.set("Content-Type", "text/markdown; charset=utf-8");
       return new Response(files["INTEGRATION.md"], { headers });

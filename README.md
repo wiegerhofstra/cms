@@ -46,14 +46,15 @@ As an administrator, open `/app/settings/api`, choose a tenant, and click **Down
 
 The generated bundle contains:
 
-- `INTEGRATION.md`: setup, all four operations, field semantics, component/rich-text rendering guidance, limits, and a verification checklist.
-- `openapi.json`: OpenAPI 3.1 contract with tenant model response schemas, bearer authentication, parameters, errors, and response headers.
+- `INTEGRATION.md`: setup, all five operations, field semantics, languages, stable asset IDs, component/rich-text rendering guidance, caching and revalidation, limits, and a verification checklist.
+- `openapi.json`: OpenAPI 3.1 contract with tenant model response schemas, bearer authentication, parameters, errors, response headers, and the outgoing revalidation request as a webhook.
 - `models.schema.json`: JSON Schema 2020-12 for delivered entries, including compact/expanded component unions and nullable assets.
 - `manifest.json`: all tenant models and field configurations, model ID/slug mappings, generation time, format version, and a deterministic schema hash.
-- `types.ts` and `client.ts`: tenant-specific types and a server-side fetch client covering all endpoints and cursor iteration.
-- `examples/usage.ts` and `examples/responses.json`: usage and synthetic fixtures, including missing fields/media and depth-limited components.
+- `types.ts` and `client.ts`: tenant-specific types and a server-side fetch client covering all endpoints, cursor iteration, and a default request timeout.
+- `revalidation.ts`: a runtime-neutral handler that verifies the CMS revalidation request in constant time and runs the website's cache invalidation.
+- `examples/`: usage, a media route that serves assets by stable ID, a Next.js revalidation route, and synthetic response fixtures including missing fields/media and depth-limited components.
 
-The export includes all models, independently of the delivery model-list endpoint's 100-model cap. It reads model definitions in a consistent database snapshot and contains no access tokens, entry content, or working asset URLs. Model labels/configuration are included; treat them as content rather than agent instructions. Re-export after changing models; the schema hash excludes the generation time and origin.
+The export includes all models, independently of the delivery model-list endpoint's 100-model cap. It reads model definitions in a consistent database snapshot and contains no access tokens, revalidation secrets, entry content, or working asset URLs. The manifest records whether the tenant's revalidation endpoint is configured, outside the schema hash. Model labels/configuration are included; treat them as content rather than agent instructions. Re-export after changing models; the schema hash excludes the generation time and origin.
 
 Delivery passes most stored field values through without enforcing primitive types. Exported schemas therefore distinguish wire guarantees from editor intent using `x-cms-editorSchema`. Generated types expose raw fields as `unknown`, with `ExpectedDataByModel` describing intended values for validation. Editor-required fields can still be absent from old entries or resolve to unavailable relations.
 
@@ -89,14 +90,15 @@ The `{tenantSlug}` in the URL must identify the tenant selected when the token w
 
 ### Endpoints
 
-All endpoints are relative to the application origin.
+All endpoints are relative to the API origin, `https://cms.fourd.nl`. Generated documentation (the integration bundle and the copyable cURL in the API reference) always uses that URL.
 
 | Method | Path | Result |
 | --- | --- | --- |
-| `GET` | `/api/content/{tenantSlug}/models` | Up to 100 tenant models, ordered by name. |
+| `GET` | `/api/content/{tenantSlug}/models` | Up to 100 tenant models, ordered by name. `meta` lists the tenant's `defaultLocale` and `locales`. |
 | `GET` | `/api/content/{tenantSlug}/models/{modelSlug}` | One model and its fields, ordered by field position. |
-| `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries` | A cursor-paginated list of published, top-level entries. Accepts `limit`, `cursor`, and `maxDepth`. |
-| `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries/{entryId}` | One published entry. `entryId` must be a UUID. Accepts `maxDepth`. |
+| `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries` | A cursor-paginated list of published, top-level entries. Accepts `limit`, `cursor`, `maxDepth`, `locale`, and `slug` (with `slugField` when the model has several slug fields) to look up entries by slug. |
+| `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries/{entryId}` | One published entry. `entryId` must be a UUID. Accepts `maxDepth` and `locale`. |
+| `GET` | `/api/content/{tenantSlug}/assets/{assetId}` | One ready asset with a fresh 300-second `url`. Store asset IDs and resolve them here instead of persisting URLs. |
 
 The model list returns objects with `id`, `name`, `slug`, `status`, `createdAt`, and `updatedAt`. Model detail adds a `fields` array. Each field contains `id`, `key`, `label`, `type`, `required`, `position`, `config`, `isList`, `isTitle`, and `targetModelIds`.
 
@@ -162,7 +164,7 @@ Content API errors use `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (4
 Set values for your environment:
 
 ```bash
-export CMS_URL="http://localhost:3000"
+export CMS_URL="https://cms.fourd.nl"
 export TENANT_SLUG="acme"
 export MODEL_SLUG="article"
 export ENTRY_ID="06af8cb8-b706-4ae7-b93f-88f78ad58340"

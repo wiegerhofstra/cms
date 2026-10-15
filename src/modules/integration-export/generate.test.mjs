@@ -87,10 +87,10 @@ test("schemas reject wrong envelopes, wrong model targets and malformed delivere
   assert.equal(validate(sample), false);
 });
 
-test("OpenAPI covers all four GET operations with resolvable schemas, security, limits and matching examples", () => {
+test("OpenAPI covers all five GET operations with resolvable schemas, security, limits and matching examples", () => {
   const spec = JSON.parse(files["openapi.json"]);
   assert.equal(spec.openapi, "3.1.0");
-  assert.equal(Object.keys(spec.paths).length, 4);
+  assert.equal(Object.keys(spec.paths).length, 5);
   assert.equal(JSON.stringify(spec).includes("#/$defs/"), false);
   for (const [route, item] of Object.entries(spec.paths)) {
     const op = item.get;
@@ -105,7 +105,11 @@ test("OpenAPI covers all four GET operations with resolvable schemas, security, 
       assert.equal(op.parameters.find((parameter) => parameter.name === "limit").schema.maximum, 100);
     }
     if (route.endsWith("/{entryId}")) assert.equal(validateResponse(examples.byModel.article.expanded), true, JSON.stringify(validateResponse.errors));
+    if (route.endsWith("/{assetId}")) assert.equal(validateResponse(examples.asset), true, JSON.stringify(validateResponse.errors));
   }
+  const webhook = spec.webhooks.revalidate.post;
+  assert.deepEqual(webhook.security, [{ revalidationToken: [] }]);
+  assert.equal(spec.components.securitySchemes.revalidationToken.scheme, "bearer");
 });
 
 test("schema hash is stable across model/config key ordering, changes with contract, and supports empty or large tenants", () => {
@@ -146,7 +150,7 @@ test("generated TypeScript client, types and examples compile for empty and popu
   try {
     for (const bundle of [files, generateIntegrationFiles({ ...fixture, models: [] })]) {
       writeBundle(directory, bundle);
-      const program = ts.createProgram(["client.ts", "types.ts", "examples/usage.ts"].map((name) => path.join(directory, name)), {
+      const program = ts.createProgram(["client.ts", "types.ts", "rich-text.ts", "revalidation.ts", "examples/usage.ts", "examples/media-route.ts"].map((name) => path.join(directory, name)), {
         noEmit: true, strict: true, skipLibCheck: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler, types: ["node"], typeRoots: [path.resolve("node_modules/@types")],
       });
@@ -156,10 +160,10 @@ test("generated TypeScript client, types and examples compile for empty and popu
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-async function withClient(run) {
+async function withClient(run, source = "client.ts") {
   const directory = mkdtempSync(path.join(tmpdir(), "cms-client-"));
   try {
-    const js = ts.transpileModule(files["client.ts"], { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const js = ts.transpileModule(files[source], { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const filename = path.join(directory, "client.mjs");
     writeFileSync(filename, js);
     await run(await import(pathToFileURL(filename).href));
@@ -233,4 +237,117 @@ test("languages are exported: locale parameter, localized fields, locale-aware c
     await client.getEntry("article", articleId, { locale: "nl" });
     assert.deepEqual(requests.map((url) => url.searchParams.get("locale")), ["nl", "nl"]);
   });
+});
+
+test("assets resolve by stable ID, and calls without a signal get a default timeout", async () => {
+  await withClient(async ({ createCmsClient }) => {
+    const requests = [];
+    const client = createCmsClient({ origin: fixture.origin, tenantSlug: "example", token: "test-token", fetch: async (url, init) => {
+      requests.push({ url, init }); return Response.json(examples.asset);
+    } });
+    const { data } = await client.getAsset("a/b");
+    assert.equal(data.id, examples.asset.data.id);
+    assert.equal(requests[0].url.pathname, "/api/content/example/assets/a%2Fb");
+    assert.ok(requests[0].init.signal instanceof AbortSignal);
+    const broken = createCmsClient({ origin: fixture.origin, tenantSlug: "example", token: "t", fetch: async () => Response.json({ data: {} }) });
+    await assert.rejects(broken.getAsset(articleId), /asset is invalid/);
+  });
+  assert.match(files["INTEGRATION.md"], /Asset IDs are unique and permanent/);
+  assert.match(files["INTEGRATION.md"], /gets a NEW asset ID/);
+});
+
+test("revalidation handler accepts only POST with the exact bearer secret and reports invalidation failures", async () => {
+  await withClient(async ({ handleRevalidation }) => {
+    let calls = 0;
+    const options = { secret: "s3cret-value", invalidate: () => { calls++; } };
+    const post = (authorization) => new Request("https://site.invalid/api/revalidate", { method: "POST", headers: authorization ? { authorization } : {} });
+    assert.equal((await handleRevalidation(post("Bearer s3cret-value"), options)).status, 200);
+    assert.equal(calls, 1);
+    const wrong = await handleRevalidation(post("Bearer s3cret-valuX"), options);
+    assert.equal(wrong.status, 401);
+    assert.equal(wrong.headers.get("www-authenticate"), "Bearer");
+    assert.equal((await handleRevalidation(post(null), options)).status, 401);
+    assert.equal((await handleRevalidation(post("Bearer s3cret-value-longer"), options)).status, 401);
+    assert.equal((await handleRevalidation(new Request("https://site.invalid/", { method: "GET" }), options)).status, 405);
+    assert.equal((await handleRevalidation(post("Bearer x"), { ...options, secret: "" })).status, 503);
+    const original = console.error;
+    console.error = () => {};
+    try {
+      assert.equal((await handleRevalidation(post("Bearer s3cret-value"), { ...options, invalidate: () => { throw new Error("boom"); } })).status, 500);
+    } finally { console.error = original; }
+    assert.equal(calls, 1);
+  }, "revalidation.ts");
+});
+
+test("revalidation status is exported without changing the schema hash", () => {
+  const configured = generateIntegrationFiles({ ...fixture, revalidation: { configured: true, url: "https://site.invalid/api/revalidate" } });
+  const manifest = JSON.parse(configured["manifest.json"]);
+  assert.deepEqual(manifest.revalidation, { configured: true, url: "https://site.invalid/api/revalidate" });
+  assert.equal(manifest.schemaHash, JSON.parse(files["manifest.json"]).schemaHash);
+  assert.match(configured["INTEGRATION.md"], /posts to https:\/\/site.invalid\/api\/revalidate/);
+  assert.match(files["INTEGRATION.md"], /Revalidation: not configured yet/);
+  assert.match(files["examples/revalidate-route.ts"], /handleRevalidation/);
+});
+
+test("entries can be looked up by slug through the API contract and the client", async () => {
+  const spec = JSON.parse(files["openapi.json"]);
+  const parameters = spec.paths["/api/content/{tenantSlug}/models/{modelSlug}/entries"].get.parameters.map((parameter) => parameter.name);
+  assert.ok(parameters.includes("slug") && parameters.includes("slugField"));
+  assert.match(files["examples/usage.ts"], /findEntryBySlug/);
+  await withClient(async ({ createCmsClient }) => {
+    const requests = [];
+    const replies = [examples.byModel.article.compact, examples.empty];
+    const client = createCmsClient({ origin: fixture.origin, tenantSlug: "example", token: "t", fetch: async (url) => {
+      requests.push(url); return Response.json(replies.shift());
+    } });
+    const found = await client.findEntryBySlug("article", "over-ons", { locale: "nl", slugField: "slug" });
+    assert.equal(found.id, examples.byModel.article.compact.data[0].id);
+    assert.equal(await client.findEntryBySlug("article", "missing"), null);
+    const params = requests[0].searchParams;
+    assert.deepEqual([params.get("slug"), params.get("slugField"), params.get("locale"), params.get("limit")], ["over-ons", "slug", "nl", "1"]);
+    assert.equal(requests[1].searchParams.has("slugField"), false);
+  });
+});
+
+test("rich text renders to escaped HTML with safe links, stable asset URLs and graceful unknown nodes", async () => {
+  await withClient(async ({ renderRichText, safeHref }) => {
+    const image = { id: articleId, originalName: "a.jpg", mimeType: "image/jpeg", sizeBytes: 1, imageWidth: 800, imageHeight: 600, url: "https://s3.invalid/a" };
+    const pdf = { ...image, id: heroId, originalName: "Report <2026>.pdf", mimeType: "application/pdf" };
+    const text = (value, marks) => ({ type: "text", text: value, ...(marks ? { marks } : {}) });
+    const html = renderRichText({ type: "doc", content: [
+      { type: "heading", attrs: { level: 9 }, content: [text("Title")] },
+      { type: "paragraph", content: [
+        text("<script>alert(1)</script>", [{ type: "bold" }]),
+        text("safe", [{ type: "link", attrs: { href: "https://example.invalid/?a=1&b=2", target: "_blank" } }]),
+        text("bad", [{ type: "link", attrs: { href: "javascript:alert(1)" } }]),
+        text("quote\"", [{ type: "link", attrs: { href: "/page?x=\"onmouseover=1" } }]),
+        { type: "hardBreak" },
+      ] },
+      { type: "orderedList", attrs: { start: 3 }, content: [{ type: "listItem", content: [{ type: "paragraph", content: [text("three")] }] }] },
+      { type: "codeBlock", attrs: { language: "js\"><x" }, content: [text("a < b")] },
+      { type: "table", content: [{ type: "tableRow", content: [{ type: "tableHeader", attrs: { colspan: 2 }, content: [{ type: "paragraph", content: [text("H")] }] }] }] },
+      { type: "asset", attrs: { assetId: image.id, asset: image } },
+      { type: "asset", attrs: { assetId: pdf.id, asset: pdf } },
+      { type: "asset", attrs: { assetId: "gone", asset: null } },
+      { type: "futureNode", content: [{ type: "paragraph", content: [text("kept")] }] },
+    ] }, { assetUrl: (asset) => "/media/" + asset.id, assetAlt: (asset) => asset.originalName });
+
+    assert.equal(html.includes("<script>"), false);
+    assert.match(html, /<h2>Title<\/h2>/);
+    assert.match(html, /<strong>&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/strong>/);
+    assert.match(html, /<a href="https:\/\/example.invalid\/\?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">safe<\/a>/);
+    assert.equal(html.includes("javascript:"), false);
+    assert.match(html, /bad/);
+    assert.match(html, /<a href="\/page\?x=&quot;onmouseover=1">quote&quot;<\/a>/);
+    assert.match(html, /<ol start="3"><li><p>three<\/p><\/li><\/ol>/);
+    assert.match(html, /<pre><code>a &lt; b<\/code><\/pre>/);
+    assert.match(html, /<th colspan="2">/);
+    assert.match(html, new RegExp('<img src="/media/' + articleId + '" alt="a.jpg" width="800" height="600" loading="lazy">'));
+    assert.match(html, new RegExp('<a href="/media/' + heroId + '">Report &lt;2026&gt;.pdf</a>'));
+    assert.match(html, /<p>kept<\/p>/);
+    assert.equal(renderRichText("not a document"), "");
+    assert.equal(renderRichText({ type: "asset", attrs: { asset: image } }).includes("https://s3.invalid/a"), true);
+    for (const unsafe of ["javascript:x", "data:text/html,x", "//evil.invalid", "vbscript:x", "java\tscript:x"]) assert.equal(safeHref(unsafe), null, unsafe);
+    for (const ok of ["https://x.invalid", "mailto:a@b.invalid", "tel:+31", "/path", "#top"]) assert.equal(safeHref(ok), ok);
+  }, "rich-text.ts");
 });
