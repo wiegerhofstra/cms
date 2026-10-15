@@ -23,6 +23,7 @@ import {
   publishEntry,
   reorderChildren,
   removeTenantFromUser,
+  resetManagedUserTwoFactor,
   switchTenant,
   unpublishEntry,
   updateEntry,
@@ -87,6 +88,12 @@ export async function updateManagedUserAction(
 
 export async function deleteManagedUserAction(userId: string) {
   const result = await deleteManagedUser(userId);
+  refresh();
+  return result;
+}
+
+export async function resetManagedUserTwoFactorAction(userId: string) {
+  const result = await resetManagedUserTwoFactor(userId);
   refresh();
   return result;
 }

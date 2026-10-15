@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useTransition, type ReactNode } from "react";
-import { Boxes, Building2, ChevronsUpDown, ImageIcon, LayoutDashboard, LogOut, Menu, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { Boxes, Building2, ChevronsUpDown, ImageIcon, LayoutDashboard, LogOut, Menu, Monitor, Moon, Settings, ShieldCheck, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
@@ -216,6 +216,10 @@ function UserMenu({ shell, onNavigate }: SidebarProps) {
             <DropdownMenuSeparator />
           </>
         ) : null}
+        <DropdownMenuItem asChild>
+          <Link href="/two-factor" onClick={onNavigate}><ShieldCheck /> Two-factor authentication</Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <ThemeOptions />
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={signOut}><LogOut /> Sign out</DropdownMenuItem>

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Shield, Trash2, UserRoundCog, Users } from "lucide-react";
+import { Plus, Save, Shield, ShieldOff, Trash2, UserRoundCog, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -31,6 +31,7 @@ import {
   createManagedUserAction,
   deleteManagedUserAction,
   removeTenantFromUserAction,
+  resetManagedUserTwoFactorAction,
   updateManagedUserAction,
 } from "./actions";
 
@@ -88,7 +89,9 @@ export function UsersPanel({ users, tenants, currentUserId }: UsersPanelProps) {
                     </div>
                     <Badge variant={user.role === "admin" ? "default" : "secondary"}>{user.role}</Badge>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{user.memberships.length} tenant assignments</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {user.memberships.length} tenant assignments · {twoFactorStatus(user)}
+                  </p>
                 </button>
               ))}
               {!users.length ? <p className="text-sm text-muted-foreground">No users yet.</p> : null}
@@ -255,8 +258,10 @@ function UserDetail({
           >
             <Save data-icon="inline-start" /> Save user
           </Button>
+          <ResetTwoFactorButton currentUserId={currentUserId} isPending={isPending} run={run} user={selectedUser} />
           <DeleteUserButton currentUserId={currentUserId} isPending={isPending} run={run} user={selectedUser} />
         </div>
+        <p className="text-sm text-muted-foreground">Two-factor authentication: {twoFactorStatus(selectedUser)}.</p>
       </FieldGroup>
 
       <div className="rounded-lg border p-4">
@@ -357,6 +362,53 @@ function DeleteUserButton({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={() => run(async () => { await deleteManagedUserAction(user.id); }, "User deleted")}>
             Delete user
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function twoFactorStatus(user: ManagedUser) {
+  if (user.twoFactorEnabled) return "2FA on";
+  return user.twoFactorRequired ? "2FA setup pending" : "2FA off";
+}
+
+function ResetTwoFactorButton({
+  currentUserId,
+  isPending,
+  run,
+  user,
+}: {
+  currentUserId: string;
+  isPending: boolean;
+  run: (action: () => Promise<void>, success: string) => void;
+  user: ManagedUser;
+}) {
+  if (!user.twoFactorEnabled || currentUserId === user.id) return null;
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" disabled={isPending}>
+          <ShieldOff data-icon="inline-start" /> Reset 2FA
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Reset two-factor authentication for {user.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Their authenticator app and backup codes stop working.{" "}
+            {user.twoFactorRequired
+              ? "They’ll sign in with their password and set up a new authenticator app right away."
+              : "They’ll sign in with just their password until they set it up again."}{" "}
+            Only do this after confirming who is asking.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => run(async () => { await resetManagedUserTwoFactorAction(user.id); }, "Two-factor authentication reset")}>
+            Reset 2FA
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

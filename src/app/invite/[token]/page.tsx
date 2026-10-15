@@ -39,7 +39,7 @@ async function InviteContent({ params }: InvitePageProps) {
   }
 
   return (
-    <AuthPageShell title="Create your account" description="You’ve been invited to the CMS. Choose your name and a password to get started.">
+    <AuthPageShell title="Create your account" description="You’ve been invited to the CMS. Choose your name and a password, then connect an authenticator app to finish.">
       <AcceptInviteForm token={token} email={invite.email} />
     </AuthPageShell>
   );

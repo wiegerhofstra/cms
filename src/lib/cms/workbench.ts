@@ -6,7 +6,7 @@ import { cache } from "react";
 import { z, type ZodType } from "zod";
 
 import { db } from "@/db";
-import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions, tenantMemberships, tenants, user } from "@/db/schema";
+import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions, tenantMemberships, tenants, twoFactor, user, verification } from "@/db/schema";
 import { auth } from "@/lib/auth/server";
 import { getCmsContext, requireAdmin, requireTenantContext, type CmsRequestContext } from "@/lib/cms/context";
 import { CmsError, CmsError as ApiError } from "@/lib/cms/errors";
@@ -411,6 +411,23 @@ export async function deleteManagedUser(userId: string) {
 
   await auth.api.removeUser({ body: { userId } });
   return { deleted: true as const, userId };
+}
+
+/** For someone who lost their authenticator app and backup codes. If their account requires two-factor authentication, they set it up again at their next sign-in. */
+export async function resetManagedUserTwoFactor(userId: string) {
+  const context = await getCmsContext(crypto.randomUUID());
+  requireAdmin(context);
+  if (context.user.id === userId) throw new CmsError("CONFLICT", "Manage your own two-factor authentication from your account menu");
+
+  await db.transaction(async (tx) => {
+    const [updatedUser] = await tx.update(user).set({ twoFactorEnabled: false, updatedAt: new Date() }).where(eq(user.id, userId)).returning({ id: user.id });
+    if (!updatedUser) throw new CmsError("NOT_FOUND", "User was not found");
+    await tx.delete(twoFactor).where(eq(twoFactor.userId, userId));
+    // Devices trusted under the old setup must not skip the code once a new one is set up.
+    await tx.delete(verification).where(and(eq(verification.value, userId), ilike(verification.identifier, "trust-device-%")));
+  });
+
+  return { user: await getManagedUser(userId) };
 }
 
 export async function assignTenantToUser(userId: string, input: unknown) {
@@ -1404,6 +1421,8 @@ function serializeManagedUser(row: UserRow, memberships: ManagedUser["membership
     banned: row.banned,
     banReason: row.banReason,
     banExpires: nullableDateString(row.banExpires),
+    twoFactorEnabled: row.twoFactorEnabled,
+    twoFactorRequired: row.twoFactorRequired,
     createdAt: dateString(row.createdAt),
     updatedAt: dateString(row.updatedAt),
     memberships,

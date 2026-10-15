@@ -31,6 +31,8 @@ export type ManagedUser = CmsUser & {
   banned: boolean;
   banReason: string | null;
   banExpires: string | null;
+  twoFactorEnabled: boolean;
+  twoFactorRequired: boolean;
   createdAt: string;
   updatedAt: string;
   memberships: ManagedUserMembership[];

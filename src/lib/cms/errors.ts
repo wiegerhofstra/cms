@@ -2,6 +2,7 @@ export type CmsErrorCode =
   | "BAD_REQUEST"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
+  | "TWO_FACTOR_SETUP_REQUIRED"
   | "NOT_FOUND"
   | "CONFLICT"
   | "VALIDATION_ERROR"
@@ -15,6 +16,7 @@ const statusByCode: Record<CmsErrorCode, number> = {
   BAD_REQUEST: 400,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  TWO_FACTOR_SETUP_REQUIRED: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
   VALIDATION_ERROR: 422,

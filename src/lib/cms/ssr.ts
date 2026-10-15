@@ -30,6 +30,10 @@ async function withPageErrors<T>(load: () => Promise<T>): Promise<T> {
       redirect("/login");
     }
 
+    if (error instanceof CmsError && error.code === "TWO_FACTOR_SETUP_REQUIRED") {
+      redirect("/two-factor");
+    }
+
     if (error instanceof CmsError && (error.code === "NOT_FOUND" || error.code === "FORBIDDEN")) {
       notFound();
     }

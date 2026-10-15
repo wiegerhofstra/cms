@@ -29,6 +29,10 @@ export async function getCmsContext(requestId: string, tenantSlug?: string): Pro
     throw new CmsError("UNAUTHORIZED", "Authentication is required");
   }
 
+  if (session.user.twoFactorRequired && !session.user.twoFactorEnabled) {
+    throw new CmsError("TWO_FACTOR_SETUP_REQUIRED", "Set up two-factor authentication to continue");
+  }
+
   const memberships = await db
     .select({
       tenantId: tenantMemberships.tenantId,
