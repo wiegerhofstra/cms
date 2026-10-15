@@ -2,19 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Braces, Building2, Check, KeyRound, Mail, RefreshCw, Settings, Users } from "lucide-react";
+import { Braces, Building2, KeyRound, Mail, RefreshCw, Users } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
-const settingsLinks = [
+export const settingsLinks = [
   { href: "/app/settings/users", label: "Users", icon: Users },
   { href: "/app/settings/tenants", label: "Tenants", icon: Building2 },
   { href: "/app/settings/auth", label: "Auth", icon: KeyRound },
@@ -23,34 +15,27 @@ const settingsLinks = [
   { href: "/app/settings/api", label: "API", icon: Braces },
 ];
 
-export function SettingsMenu() {
+export function SettingsTabs() {
   const pathname = usePathname();
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Open settings menu">
-          <Settings />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Settings</DropdownMenuLabel>
-          {settingsLinks.map((item) => {
-            const isActive = pathname.startsWith(item.href);
-
-            return (
-              <DropdownMenuItem key={item.href} asChild>
-                <Link href={item.href} aria-current={isActive ? "page" : undefined}>
-                  <item.icon />
-                  {item.label}
-                  {isActive ? <Check className="ml-auto" /> : null}
-                </Link>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <nav aria-label="Settings" className="-mb-px flex gap-1 overflow-x-auto border-b">
+      {settingsLinks.map((item) => {
+        const isActive = pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={isActive ? "page" : undefined}
+            className={cn(
+              "flex shrink-0 items-center gap-2 border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 [&_svg]:size-4",
+              isActive && "border-primary font-medium text-foreground [&_svg]:text-primary",
+            )}
+          >
+            <item.icon /> {item.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

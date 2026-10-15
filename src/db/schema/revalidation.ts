@@ -6,5 +6,6 @@ export const tenantRevalidationSettings = pgTable("tenant_revalidation_settings"
   tenantId: uuid("tenant_id").primaryKey().references(() => tenants.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
   encryptedToken: text("encrypted_token").notNull(),
+  lastRevalidatedAt: timestamp("last_revalidated_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

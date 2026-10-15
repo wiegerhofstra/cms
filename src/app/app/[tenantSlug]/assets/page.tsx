@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { AssetsPanel } from "@/components/workbench/assets-panel";
-import { WorkbenchPageFallback } from "@/components/workbench/workbench-loading";
+import { AssetsFallback } from "@/components/workbench/workbench-loading";
 import { getCmsPageData } from "@/lib/cms/ssr";
 import type { AssetSort } from "@/lib/cms/types";
 
@@ -15,7 +15,7 @@ type AssetsPageProps = {
 
 export default function AssetsPage({ params, searchParams }: AssetsPageProps) {
   return (
-    <Suspense fallback={<WorkbenchPageFallback label="Loading assets" />}>
+    <Suspense fallback={<AssetsFallback />}>
       <AssetsContent params={params} searchParams={searchParams} />
     </Suspense>
   );

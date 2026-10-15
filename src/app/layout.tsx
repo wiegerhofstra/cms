@@ -1,22 +1,29 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Source_Code_Pro, Source_Sans_3, Source_Serif_4 } from "next/font/google";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// The serif is reserved for content being written (entry titles and rich text), not interface chrome.
+const sourceSerif = Source_Serif_4({
+  variable: "--font-source-serif",
+  subsets: ["latin"],
+});
+
+const sourceCode = Source_Code_Pro({
+  variable: "--font-source-code",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Multi-Tenant CMS",
-  description: "Composable content management for tenant-scoped creator workflows.",
+  title: "CMS",
+  description: "Structured content management for multiple websites.",
 };
 
 export default function RootLayout({
@@ -25,15 +32,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // next-themes sets the theme class on <html> before hydration, so React must not warn about it.
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+      className={`${sourceSans.variable} ${sourceSerif.variable} ${sourceCode.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>
-          {children}
-          <Toaster richColors />
-        </TooltipProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <TooltipProvider>
+            {children}
+            <Toaster richColors />
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

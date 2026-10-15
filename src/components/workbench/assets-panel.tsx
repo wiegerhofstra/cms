@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Separator } from "@/components/ui/separator";
 import type { AssetSort, AssetWithPreview } from "@/lib/cms/types";
 import { completeUploadAction, deleteAssetAction, presignUploadAction, updateAssetAction } from "./actions";
+import { usePageTitle } from "./page-title";
 
 export function AssetsPanel({
   tenantSlug,
@@ -105,7 +106,7 @@ export function AssetsPanel({
         </form>
         <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {assets.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground sm:col-span-2 xl:col-span-3 2xl:col-span-4">
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground sm:col-span-2 xl:col-span-3 2xl:col-span-4">
               {query.trim() ? "No assets match your search." : "No assets uploaded yet."}
             </div>
           ) : (
@@ -124,7 +125,7 @@ export function AssetsPanel({
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
                       {asset.mimeType.startsWith("image/") ? <ImageIcon /> : <FileIcon />}
-                      <span className="text-xs font-medium uppercase tracking-[0.22em]">{asset.mimeType.split("/")[1] ?? "file"}</span>
+                      <span className="text-xs font-medium uppercase">{asset.mimeType.split("/")[1] ?? "file"}</span>
                     </div>
                   )}
                 </div>
@@ -209,6 +210,7 @@ export function AssetDetailPanel({ tenantSlug, asset }: { tenantSlug: string; as
   const [isPending, startTransition] = useTransition();
   const [originalName, setOriginalName] = useState(asset.originalName);
   const appPath = `/app/${tenantSlug}`;
+  usePageTitle(asset.originalName);
 
   function run(action: () => Promise<void>, success: string) {
     startTransition(async () => {
@@ -244,7 +246,7 @@ export function AssetDetailPanel({ tenantSlug, asset }: { tenantSlug: string; as
             ) : (
               <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-3 text-muted-foreground md:min-h-[520px]">
                 {asset.mimeType.startsWith("image/") ? <ImageIcon /> : <FileIcon />}
-                <span className="text-xs font-medium uppercase tracking-[0.22em]">{asset.mimeType}</span>
+                <span className="text-xs font-medium uppercase">{asset.mimeType}</span>
               </div>
             )}
           </div>
@@ -318,7 +320,7 @@ export function AssetDetailPanel({ tenantSlug, asset }: { tenantSlug: string; as
 function MetadataRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="grid gap-1">
-      <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
       <span className={mono ? "break-all font-mono text-xs" : "break-words"}>{value}</span>
     </div>
   );

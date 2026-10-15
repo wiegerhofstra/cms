@@ -7,13 +7,9 @@ import { admin } from "better-auth/plugins";
 
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { getEnv } from "@/lib/env";
-
-const env = getEnv();
-const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 
 export const auth = betterAuth({
-  appName: "Multi-Tenant CMS",
+  appName: "CMS",
   database: drizzleAdapter(db, {
     provider: "pg",
     schema,
@@ -21,15 +17,9 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    // Accounts are created by administrators or through invite links, never by public sign-up.
+    disableSignUp: true,
   },
-  socialProviders: googleEnabled
-    ? {
-        google: {
-          clientId: env.GOOGLE_CLIENT_ID,
-          clientSecret: env.GOOGLE_CLIENT_SECRET,
-        },
-      }
-    : undefined,
   plugins: [admin(), nextCookies()],
 });
 

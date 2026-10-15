@@ -1,7 +1,8 @@
 import "server-only";
 
-import { and, asc, desc, eq, ilike, inArray, max, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNull, max, ne, or, sql } from "drizzle-orm";
 import { connection } from "next/server";
+import { cache } from "react";
 import { z, type ZodType } from "zod";
 
 import { db } from "@/db";
@@ -17,12 +18,17 @@ import type {
   ContentEntry,
   ContentField,
   ContentModel,
+  DashboardData,
+  DashboardEntry,
+  EntryListData,
   EntryRevision,
   LoadWorkbenchDataInput,
   ManagedUser,
   TenantSummary,
   WorkbenchData,
+  WorkbenchShell,
 } from "@/lib/cms/types";
+import { titleValue } from "@/components/workbench/utils";
 import { getEnv } from "@/lib/env";
 import { deleteS3Object, presignRead, presignUpload } from "@/lib/storage/s3";
 import { setActiveTenantId } from "@/lib/tenant/active-tenant";
@@ -35,6 +41,7 @@ import { extractImageDimensions } from "@/modules/uploads/image-dimensions";
 import { completeUploadSchema, presignUploadSchema, sanitizeFilename, assertAllowedUpload } from "@/modules/uploads/validation";
 import { createUploadToken, parseUploadToken } from "@/modules/uploads/token";
 import { listAccessTokensForContext } from "@/modules/access-tokens/service";
+import { getRevalidationStatus } from "@/modules/revalidation/service";
 
 const createTenantSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -183,7 +190,7 @@ export async function getWorkbenchData(input: LoadWorkbenchDataInput = {}): Prom
   const shouldLoadModel = Boolean(activeModelId && ["models", "model-detail", "entries", "model-entries", "entry-new", "entry-detail"].includes(view));
   const [fields, entries] = await Promise.all([
     shouldLoadModel ? getModelFieldsForContext(tenantContext, activeModelId) : Promise.resolve([]),
-    activeModelId && (view === "models" || view === "model-detail" || view === "entries" || view === "model-entries" || view === "entry-detail")
+    activeModelId && (view === "models" || view === "model-detail")
       ? listEntriesForContext(tenantContext, activeModelId, query)
       : Promise.resolve([]),
   ]);
@@ -220,6 +227,72 @@ export async function getWorkbenchData(input: LoadWorkbenchDataInput = {}): Prom
     activeModelId,
     activeEntryId: entry?.id ?? input.entryId ?? "",
     entryQuery: query,
+  };
+}
+
+/**
+ * Data for the workbench chrome (sidebar and header). Cached per request so the layout and page can share it.
+ * Without a tenant slug (settings pages), it falls back to the active tenant cookie, then the first membership.
+ */
+export const getWorkbenchShell = cache(async (tenantSlug?: string): Promise<WorkbenchShell> => {
+  await connection();
+  const context = await getCmsContext(crypto.randomUUID(), tenantSlug);
+  if (tenantSlug && !context.activeMembership) throw new CmsError("NOT_FOUND", "Tenant was not found");
+
+  const me = serializeMe(context);
+  const activeMembership = context.activeMembership ?? context.memberships[0] ?? null;
+  if (!activeMembership) return { me, activeMembership: null, models: [], revalidation: { configured: false, lastRevalidatedAt: null } };
+
+  const tenantContext: TenantContext = { ...context, activeMembership, activeTenantId: activeMembership.tenantId };
+  const [models, revalidation] = await Promise.all([listModelsForContext(tenantContext), getRevalidationStatus(activeMembership.tenantId)]);
+  return { me, activeMembership: me.memberships.find((membership) => membership.tenantId === activeMembership.tenantId) ?? null, models, revalidation };
+});
+
+export async function getEntryList(tenantSlug: string, modelId: string): Promise<EntryListData> {
+  await connection();
+  const context = await requireTenantContext(crypto.randomUUID(), tenantSlug);
+  const [model, fields, entries] = await Promise.all([
+    getModelForContext(context, modelId),
+    getModelFieldsForContext(context, modelId),
+    listEntriesForContext(context, modelId),
+  ]);
+  return { model, fields, entries };
+}
+
+export async function getDashboard(tenantSlug: string): Promise<DashboardData> {
+  await connection();
+  const context = await requireTenantContext(crypto.randomUUID(), tenantSlug);
+  // Nested child entries are edited through their parent, so they're left out of the overview.
+  const topLevel = and(eq(contentEntries.tenantId, context.activeTenantId), isNull(contentEntries.deletedAt), isNull(contentEntries.parentEntryId));
+  const drafts = and(topLevel, eq(contentEntries.status, "draft"));
+
+  const [recentRows, draftRows, [draftTotal], [entryTotal], titleFields] = await Promise.all([
+    db.select().from(contentEntries).where(topLevel).orderBy(desc(contentEntries.updatedAt)).limit(8),
+    db.select().from(contentEntries).where(drafts).orderBy(desc(contentEntries.updatedAt)).limit(6),
+    db.select({ value: count() }).from(contentEntries).where(drafts),
+    db.select({ value: count() }).from(contentEntries).where(topLevel),
+    db.select({ modelId: contentModelFields.modelId, key: contentModelFields.key })
+      .from(contentModelFields)
+      .where(and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.isTitle, true))),
+  ]);
+  const titleKeys = new Map(titleFields.map((field) => [field.modelId, field.key]));
+
+  function dashboardEntry(row: typeof recentRows[number]): DashboardEntry {
+    const titleKey = titleKeys.get(row.modelId);
+    return {
+      id: row.id,
+      modelId: row.modelId,
+      title: (titleKey ? titleValue(row.data[titleKey]) : "") || "Untitled entry",
+      status: row.status,
+      updatedAt: dateString(row.updatedAt),
+    };
+  }
+
+  return {
+    recentEntries: recentRows.map(dashboardEntry),
+    drafts: draftRows.map(dashboardEntry),
+    draftCount: draftTotal?.value ?? 0,
+    entryCount: entryTotal?.value ?? 0,
   };
 }
 
@@ -416,6 +489,7 @@ export async function createModel(input: unknown, tenantSlug?: string) {
           tenantId: context.activeTenantId,
           name: data.name,
           slug: data.slug,
+          kind: data.kind,
           createdBy: context.user.id,
           updatedBy: context.user.id,
         })

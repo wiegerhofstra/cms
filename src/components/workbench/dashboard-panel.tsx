@@ -1,41 +1,98 @@
 import Link from "next/link";
-import { Boxes, FileText, ImageIcon, Settings } from "lucide-react";
-import type { ReactNode } from "react";
+import { Plus } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AssetWithPreview, CmsSessionView, ContentModel } from "@/lib/cms/types";
+import type { DashboardData, DashboardEntry, WorkbenchShell } from "@/lib/cms/types";
+import { RelativeTime, StatusDot } from "./entry-status";
 
-export function DashboardPanel({ tenantSlug, me, models, assets }: { tenantSlug: string; me: CmsSessionView | null; models: ContentModel[]; assets: AssetWithPreview[] }) {
+export function DashboardPanel({ tenantSlug, shell, dashboard }: { tenantSlug: string; shell: WorkbenchShell; dashboard: DashboardData }) {
   const appPath = `/app/${tenantSlug}`;
+  const modelNames = new Map(shell.models.map((model) => [model.id, model.name]));
+  const contentModels = shell.models
+    .filter((model) => model.kind === "content" && model.status === "active")
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="grid gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Dashboard</CardTitle>
-          <CardDescription>Quick access to each dedicated CMS workflow route.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {me?.user.role === "admin" ? <QuickRoute href="/app/settings/users" icon={<Settings />} title="Settings" description="Manage users and API access" /> : null}
-          <QuickRoute href={`${appPath}/models`} icon={<Boxes />} title="Models" description={`${models.length} models`} />
-          <QuickRoute href={`${appPath}/entries`} icon={<FileText />} title="Entries" description="Create and publish content" />
-          <QuickRoute href={`${appPath}/assets`} icon={<ImageIcon />} title="Assets" description={`${assets.length} files`} />
-        </CardContent>
-      </Card>
+      {contentModels.length ? (
+        <section aria-labelledby="new-entry-heading" className="flex flex-wrap items-center gap-2 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+          <h2 id="new-entry-heading" className="mr-2 text-sm font-medium">New entry</h2>
+          {contentModels.map((model) => (
+            <Button key={model.id} asChild size="sm" variant="outline">
+              <Link href={`${appPath}/entries/${model.id}/new`}><Plus data-icon="inline-start" /> {model.name}</Link>
+            </Button>
+          ))}
+        </section>
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="self-start">
+          <CardHeader>
+            <CardTitle>Recently edited</CardTitle>
+            <CardDescription>{dashboard.entryCount} {dashboard.entryCount === 1 ? "entry" : "entries"} in this workspace</CardDescription>
+          </CardHeader>
+          <CardContent className="px-2">
+            {dashboard.recentEntries.length ? (
+              <DashboardEntryList appPath={appPath} entries={dashboard.recentEntries} modelNames={modelNames} />
+            ) : (
+              <p className="px-2 py-6 text-center text-sm text-muted-foreground">Nothing has been edited yet. Create an entry to get started.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid content-start gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Drafts</CardTitle>
+              <CardDescription>{dashboard.draftCount ? `${dashboard.draftCount} not published yet` : "Everything is published."}</CardDescription>
+            </CardHeader>
+            {dashboard.drafts.length ? (
+              <CardContent className="px-2">
+                <DashboardEntryList appPath={appPath} entries={dashboard.drafts} modelNames={modelNames} />
+              </CardContent>
+            ) : null}
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Website</CardTitle>
+              <CardDescription>
+                {shell.revalidation.configured
+                  ? shell.revalidation.lastRevalidatedAt
+                    ? <>Last revalidated <RelativeTime value={shell.revalidation.lastRevalidatedAt} /></>
+                    : "Not revalidated from the CMS yet."
+                  : "Revalidation isn’t set up, so the website refreshes on its own schedule."}
+              </CardDescription>
+            </CardHeader>
+            {!shell.revalidation.configured && shell.me.user.role === "admin" ? (
+              <CardContent>
+                <Button asChild variant="outline"><Link href="/app/settings/revalidation">Set up revalidation</Link></Button>
+              </CardContent>
+            ) : null}
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
 
-function QuickRoute({ href, icon, title, description }: { href: string; icon: ReactNode; title: string; description: string }) {
+function DashboardEntryList({ appPath, entries, modelNames }: { appPath: string; entries: DashboardEntry[]; modelNames: Map<string, string> }) {
   return (
-    <Link href={href} className="rounded-2xl border bg-card p-4 transition-colors hover:bg-muted">
-      <div className="flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">{icon}</span>
-        <div>
-          <p className="font-medium">{title}</p>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-      </div>
-    </Link>
+    <ul className="flex flex-col gap-0.5">
+      {entries.map((entry) => (
+        <li key={entry.id}>
+          <Link
+            href={`${appPath}/entries/${entry.modelId}/${entry.id}`}
+            className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <StatusDot status={entry.status} />
+            <span className="min-w-0 flex-1 truncate font-medium">{entry.title}</span>
+            <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{modelNames.get(entry.modelId)}</span>
+            <RelativeTime className="w-20 shrink-0 text-right text-xs text-muted-foreground" value={entry.updatedAt} />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }

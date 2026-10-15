@@ -77,7 +77,7 @@ export function UsersPanel({ users, tenants, currentUserId }: UsersPanelProps) {
               {users.map((user) => (
                 <button
                   key={user.id}
-                  className="rounded-xl border bg-card p-3 text-left hover:bg-muted"
+                  className="rounded-lg border bg-card p-3 text-left hover:bg-muted"
                   type="button"
                   onClick={() => setSelectedUserId(user.id)}
                 >
@@ -259,7 +259,7 @@ function UserDetail({
         </div>
       </FieldGroup>
 
-      <div className="rounded-2xl border p-4">
+      <div className="rounded-lg border p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="font-medium">Tenant assignments</p>

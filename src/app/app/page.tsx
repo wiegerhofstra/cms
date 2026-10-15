@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { NoActiveTenantCard } from "@/components/workbench/no-active-tenant-card";
-import { getCmsPageData } from "@/lib/cms/ssr";
+import { getCmsShellData } from "@/lib/cms/ssr";
 
 export default function AppPage() {
   return (
@@ -14,15 +14,14 @@ export default function AppPage() {
 }
 
 async function AppPageContent() {
-  const data = await getCmsPageData({ view: "dashboard" });
-  const activeMembership = data.me.memberships.find((membership) => membership.tenantId === data.me.activeTenantId) ?? data.me.memberships[0];
+  const { me, activeMembership } = await getCmsShellData();
 
   if (activeMembership) redirect(`/app/${activeMembership.tenant.slug}`);
 
   return (
     <main className="grid min-h-screen place-items-center bg-background p-4 text-foreground">
       <div className="w-full max-w-lg">
-        <NoActiveTenantCard isAdmin={data.me.user.role === "admin"} />
+        <NoActiveTenantCard isAdmin={me.user.role === "admin"} />
       </div>
     </main>
   );

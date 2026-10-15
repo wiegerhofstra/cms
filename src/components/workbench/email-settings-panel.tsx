@@ -70,7 +70,7 @@ export function EmailSettingsPanel({ tenants, tenant, settings, credentialsReady
       </CardContent>
     </Card>
     {tenant ? <>
-      {!credentialsReady ? <p role="alert" className="rounded-xl border p-4 text-sm">Email credential storage needs a server encryption key. Set EMAIL_ENCRYPTION_KEY before saving SMTP credentials. See the email setup guide in the repository.</p> : null}
+      {!credentialsReady ? <p role="alert" className="rounded-lg border p-4 text-sm">Email credential storage needs a server encryption key. Set EMAIL_ENCRYPTION_KEY before saving SMTP credentials. See the email setup guide in the repository.</p> : null}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Card>
           <CardHeader>

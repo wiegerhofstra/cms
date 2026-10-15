@@ -189,7 +189,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
               </Field>
             </div>
             {type === "component" && (
-              <div className="grid gap-4 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
+              <div className="grid gap-4 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
                 <Field>
                   <FieldLabel>Allowed component models</FieldLabel>
                   <ModelMultiSelect models={models} value={targetModelSlugs} onChange={setTargetModelSlugs} />
@@ -206,7 +206,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
             {type === "rich_text" && <RichTextFeatureControls value={richTextFeatures} onChange={setRichTextFeatures} />}
             {type === "enum" && <EnumOptionsEditor value={enumOptions} onChange={setEnumOptions} />}
             {type === "slug" && (
-              <label className="flex items-center gap-3 rounded-xl border bg-muted/20 p-4 text-sm">
+              <label className="flex items-center gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
                 <Checkbox aria-label="Unique value" checked={uniqueSlug} onCheckedChange={(checked) => setUniqueSlug(checked === true)} />
                 <span><span className="block font-medium">Unique value</span><span className="block text-xs text-muted-foreground">Prevent two entries from using the same slug.</span></span>
               </label>
@@ -265,7 +265,7 @@ export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug
   }
 
   return (
-    <div className="divide-y overflow-hidden rounded-2xl border bg-background/40">
+    <div className="divide-y overflow-hidden rounded-lg border bg-card">
       {fields.length ? fields.map((field, index) => (
         <div key={field.id} data-field-id={field.id} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 p-4 md:grid-cols-[auto_minmax(0,1fr)_minmax(10rem,0.8fr)_auto]">
           <div className="row-span-3 flex flex-col items-center gap-1 md:row-span-1" role="group" aria-label={`Reorder ${field.label}`}>
@@ -403,7 +403,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onS
 
 function FieldToggle({ checked, onCheckedChange, title, description }: { checked: boolean; onCheckedChange: (checked: boolean) => void; title: string; description: string }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-xl border bg-muted/20 p-4 text-sm transition-colors hover:bg-muted/40">
+    <label className="flex cursor-pointer items-start gap-3 rounded-lg border bg-muted/20 p-4 text-sm transition-colors hover:bg-muted/40">
       <Checkbox aria-label={title} className="mt-0.5" checked={checked} onCheckedChange={(value) => onCheckedChange(value === true)} />
       <span><span className="block font-medium">{title}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{description}</span></span>
     </label>
@@ -441,7 +441,7 @@ function withEditorConfig(config: Record<string, unknown>, helpText: string, hid
 
 function AdvancedConfig({ value, onChange, rows }: { value: string; onChange: (value: string) => void; rows: number }) {
   return (
-    <details className="rounded-xl border bg-muted/10">
+    <details className="rounded-lg border bg-muted/10">
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Advanced JSON configuration</summary>
       <div className="border-t p-4">
         <Textarea aria-label="Advanced JSON configuration" className="font-mono text-xs" rows={rows} value={value} onChange={(event) => onChange(event.target.value)} spellCheck={false} />
@@ -488,7 +488,7 @@ function EnumOptionsEditor({ className, value, onChange }: { className?: string;
           {value.map((option, index) => {
             const duplicate = duplicateValues.has(option.value.trim());
             return (
-              <div key={index} className="grid gap-2 rounded-xl border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+              <div key={index} className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
                 <label className="grid gap-1.5 text-xs font-medium">
                   Label
                   <Input aria-invalid={!option.label.trim()} aria-label={`Option ${index + 1} label`} placeholder="In progress" value={option.label} onChange={(event) => updateOption(index, "label", event.target.value)} />
@@ -506,7 +506,7 @@ function EnumOptionsEditor({ className, value, onChange }: { className?: string;
           })}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No options yet. Add one to render this field as a dropdown.</div>
+        <div className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No options yet. Add one to render this field as a dropdown.</div>
       )}
     </div>
   );
@@ -586,7 +586,7 @@ function RichTextFeatureControls({ className, value, onChange }: { className?: s
   return (
     <div className={className}>
       <p className="mb-2 text-sm font-medium">Rich text options</p>
-      <div className="grid gap-2 rounded-xl border bg-muted/30 p-3 sm:grid-cols-2">
+      <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
         {richTextFeatureOptions.map((option) => (
           <label key={option.key} className="flex items-center gap-2 text-sm">
             <Checkbox checked={value[option.key]} onCheckedChange={(checked) => updateFeature(option.key, checked === true)} /> {option.label}

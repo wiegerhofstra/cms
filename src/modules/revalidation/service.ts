@@ -37,10 +37,13 @@ export async function getRevalidationSettingsForAdmin(tenantId: string) {
   return settings ? publicSettings(settings) : null;
 }
 
-export async function isRevalidationConfigured(tenantId: string) {
+export async function getRevalidationStatus(tenantId: string) {
   await requireAccess(tenantId);
   const settings = await readSettings(tenantId);
-  return Boolean(settings?.url && settings.encryptedToken);
+  return {
+    configured: Boolean(settings?.url && settings.encryptedToken),
+    lastRevalidatedAt: settings?.lastRevalidatedAt?.toISOString() ?? null,
+  };
 }
 
 export async function saveRevalidationSettings(tenantId: string, input: unknown) {
@@ -70,4 +73,5 @@ export async function revalidateTenant(tenantId: string) {
   try { token = decryptRevalidationToken(settings.encryptedToken, tenantId); }
   catch { throw new CmsError("BAD_REQUEST", "The saved revalidation token is unavailable. Save the token again in Settings → Revalidation."); }
   await requestRevalidation(settings.url, token);
+  await db.update(tenantRevalidationSettings).set({ lastRevalidatedAt: new Date() }).where(eq(tenantRevalidationSettings.tenantId, tenantId));
 }

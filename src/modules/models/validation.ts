@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const modelStatusSchema = z.enum(["active", "archived"]);
+export const modelKindSchema = z.enum(["content", "block"]);
 export const fieldTypeSchema = z.enum([
   "text",
   "rich_text",
@@ -36,6 +37,7 @@ export const createModelSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_]*$/, "Use snake_case starting with a letter")
       .max(80),
+    kind: modelKindSchema.optional().default("content"),
     fields: z.array(fieldInputSchema).max(100).optional().default([]),
   })
   .refine((value) => value.fields.filter((field) => field.isTitle).length <= 1, {
@@ -47,8 +49,9 @@ export const updateModelSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     status: modelStatusSchema.optional(),
+    kind: modelKindSchema.optional(),
   })
-  .refine((value) => value.name !== undefined || value.status !== undefined, {
+  .refine((value) => value.name !== undefined || value.status !== undefined || value.kind !== undefined, {
     message: "Provide at least one field to update",
   });
 

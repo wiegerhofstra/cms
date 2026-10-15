@@ -24,7 +24,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ContentField, ContentModel, FieldInput } from "@/lib/cms/types";
+import type { ContentField, ContentModel, FieldInput, ModelKind } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { archiveModelAction, createModelAction, deleteModelAction, updateModelAction } from "./actions";
 import { FieldEditor, FieldTable } from "./model-fields";
@@ -62,14 +62,14 @@ export function ModelsPanel(props: {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
-      <Card className="hidden self-start xl:flex xl:sticky xl:top-28 xl:max-h-[calc(100vh-9rem)]">
+      <Card className="hidden self-start xl:sticky xl:top-[calc(var(--workbench-header)+2rem)] xl:flex xl:max-h-[calc(100dvh-var(--workbench-header)-4rem)]">
         <CardHeader className="border-b">
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle className="flex items-center gap-2"><Boxes /> Models</CardTitle>
               <CardDescription>{props.models.length} model{props.models.length === 1 ? "" : "s"}</CardDescription>
             </div>
-            <Button asChild size="icon" aria-label="Create model"><Link href={`${appPath}/models/new`}><Plus /></Link></Button>
+            <Button asChild size="icon" variant="outline" aria-label="Create model" title="Create model"><Link href={`${appPath}/models/new`}><Plus /></Link></Button>
           </div>
         </CardHeader>
         <CardContent className="min-h-0 overflow-y-auto">
@@ -78,12 +78,12 @@ export function ModelsPanel(props: {
               <Link
                 key={model.id}
                 aria-current={model.id === props.activeModelId ? "page" : undefined}
-                className={cn("group rounded-xl border p-3 text-left transition-colors hover:bg-muted", model.id === props.activeModelId ? "border-accent/50 bg-muted ring-1 ring-accent/20" : "bg-card")}
+                className={cn("group rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted", model.id === props.activeModelId && "bg-selected hover:bg-selected")}
                 href={`${appPath}/models/${model.id}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium">{model.name}</span>
-                  <ChevronRight className={cn("size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5", model.id === props.activeModelId && "text-accent")} />
+                  <ChevronRight className={cn("size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5", model.id === props.activeModelId && "text-primary")} />
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <p className="truncate font-mono text-xs text-muted-foreground">{model.slug}</p>
@@ -95,7 +95,7 @@ export function ModelsPanel(props: {
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-2 rounded-xl border bg-card p-3 xl:hidden">
+      <div className="flex items-center gap-2 rounded-lg border bg-card p-3 xl:hidden">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-muted-foreground">Editing model</p>
           <Select value={props.activeModelId} onValueChange={(modelId) => router.push(`${appPath}/models/${modelId}`)}>
@@ -111,14 +111,14 @@ export function ModelsPanel(props: {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                {props.activeModel ? <Badge variant={props.activeModel.status === "active" ? "default" : "secondary"}>{props.activeModel.status === "active" ? "Active" : "Archived"}</Badge> : null}
+                {props.activeModel ? <Badge variant={props.activeModel.status === "active" ? "secondary" : "outline"}>{props.activeModel.status === "active" ? "Active" : "Archived"}</Badge> : null}
                 {props.activeModel ? <span className="font-mono text-xs text-muted-foreground">{props.activeModel.slug}</span> : null}
               </div>
               <CardTitle className="text-xl">{props.activeModel?.name ?? "Select a model"}</CardTitle>
               <CardDescription>{props.activeModel ? `${props.fields.length} field${props.fields.length === 1 ? " defines" : "s define"} this content type.` : "Choose a model to start editing."}</CardDescription>
             </div>
             {props.activeModel ? (
-              <Button asChild>
+              <Button asChild variant="outline">
                 <Link href={`${appPath}/entries/${props.activeModelId}`}><FileText data-icon="inline-start" /> Manage entries</Link>
               </Button>
             ) : null}
@@ -131,6 +131,15 @@ export function ModelsPanel(props: {
                 <h2 id="model-details-heading" className="font-medium">Model details</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Give editors a clear, recognizable name. The API slug stays fixed.</p>
               </div>
+              <Field className="mb-4">
+                <FieldLabel>Type</FieldLabel>
+                <ModelKindSelect
+                  value={props.activeModel.kind}
+                  disabled={isPending}
+                  onChange={(kind) => run(() => updateModelAction(props.tenantSlug, props.activeModelId, { kind }), kind === "block" ? "Model listed under Blocks" : "Model listed under Content")}
+                />
+                <FieldDescription>{modelKindDescription}</FieldDescription>
+              </Field>
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                 <Field>
                   <FieldLabel htmlFor="model-name">Name</FieldLabel>
@@ -157,7 +166,7 @@ export function ModelsPanel(props: {
               <FieldTable tenantSlug={props.tenantSlug} fields={props.fields} models={props.models} modelId={props.activeModelId} />
             </section>
 
-            <section aria-labelledby="danger-zone-heading" className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+            <section aria-labelledby="danger-zone-heading" className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 id="danger-zone-heading" className="font-medium">Danger zone</h2>
@@ -211,6 +220,7 @@ export function ModelCreatePanel({ tenantSlug }: { tenantSlug: string }) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [kind, setKind] = useState<ModelKind>("content");
   const [initialFields, setInitialFields] = useState("[]");
   const appPath = `/app/${tenantSlug}`;
 
@@ -238,6 +248,11 @@ export function ModelCreatePanel({ tenantSlug }: { tenantSlug: string }) {
             <Input id="model-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Blog Post" />
           </Field>
           <Field>
+            <FieldLabel>Type</FieldLabel>
+            <ModelKindSelect value={kind} onChange={setKind} />
+            <FieldDescription>{modelKindDescription}</FieldDescription>
+          </Field>
+          <Field>
             <FieldLabel htmlFor="model-slug">Slug</FieldLabel>
             <Input id="model-slug" value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="blog_post" />
           </Field>
@@ -252,9 +267,10 @@ export function ModelCreatePanel({ tenantSlug }: { tenantSlug: string }) {
               onClick={() =>
                 run(async () => {
                   const fields = JSON.parse(initialFields || "[]") as FieldInput[];
-                  const response = await createModelAction(tenantSlug, { name, slug, fields });
+                  const response = await createModelAction(tenantSlug, { name, slug, kind, fields });
                   setName("");
                   setSlug("");
+                  setKind("content");
                   setInitialFields("[]");
                   router.push(`${appPath}/models/${response.model.id}`);
                   router.refresh();
@@ -270,5 +286,21 @@ export function ModelCreatePanel({ tenantSlug }: { tenantSlug: string }) {
         </FieldGroup>
       </CardContent>
     </Card>
+  );
+}
+
+const modelKindDescription = "Content models are listed under Content in the sidebar. Blocks are reusable pieces used inside other entries.";
+
+function ModelKindSelect({ value, disabled, onChange }: { value: ModelKind; disabled?: boolean; onChange: (kind: ModelKind) => void }) {
+  return (
+    <Select value={value} disabled={disabled} onValueChange={(next) => onChange(next as ModelKind)}>
+      <SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value="content">Content</SelectItem>
+          <SelectItem value="block">Block</SelectItem>
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }

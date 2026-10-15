@@ -16,6 +16,7 @@ import { user } from "./auth";
 import { tenants } from "./tenants";
 
 export const modelStatus = pgEnum("model_status", ["active", "archived"]);
+export const modelKind = pgEnum("model_kind", ["content", "block"]);
 export const entryStatus = pgEnum("entry_status", ["draft", "published"]);
 export const fieldType = pgEnum("field_type", [
   "text",
@@ -41,6 +42,7 @@ export const contentModels = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     status: modelStatus("status").notNull().default("active"),
+    kind: modelKind("kind").notNull().default("content"),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

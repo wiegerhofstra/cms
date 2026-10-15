@@ -31,7 +31,7 @@ type EntryFormProps = {
 export function EntryForm({ fields, assets, componentReferences, data, onChange }: EntryFormProps) {
   if (!fields.length) {
     return (
-      <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
         This model has no fields yet. Add fields to the model before creating entries.
       </div>
     );
@@ -51,7 +51,7 @@ export function EntryForm({ fields, assets, componentReferences, data, onChange 
     <div className="flex flex-col gap-6">
       {visibleFields.length ? <FieldGroup>{visibleFields.map(renderField)}</FieldGroup> : null}
       {hiddenFields.length ? (
-        <details className="group rounded-xl border" open={hiddenFieldsNeedInput || undefined}>
+        <details className="group rounded-lg border" open={hiddenFieldsNeedInput || undefined}>
           <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
             <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
             More fields
@@ -219,9 +219,9 @@ function AssetFieldInput({ field, assets, value, onChange }: { field: ContentFie
 function SelectedAssetCard({ assetId, asset, onChange, onRemove }: { assetId: string; asset: AssetWithPreview | null; onChange: () => void; onRemove: () => void }) {
   if (!asset) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/60 p-3 text-sm">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-16 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
+          <div className="flex size-16 shrink-0 items-center justify-center rounded-md bg-card text-muted-foreground ring-1 ring-border">
             <FileIcon />
           </div>
           <div className="min-w-0">
@@ -242,15 +242,15 @@ function SelectedAssetCard({ assetId, asset, onChange, onRemove }: { assetId: st
   const mimeHint = asset.mimeType.split("/")[1] ?? asset.mimeType;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/60 p-3 text-sm">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background text-muted-foreground">
+        <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-card text-muted-foreground ring-1 ring-border">
           {previewable ? (
             <Image src={asset.previewUrl!} alt={asset.originalName} fill unoptimized sizes="64px" className="object-cover" />
           ) : (
             <div className="flex flex-col items-center gap-1 px-1 text-center">
               {asset.mimeType.startsWith("image/") ? <ImageIcon /> : <FileIcon />}
-              <span className="max-w-full truncate text-[0.625rem] font-medium uppercase tracking-[0.16em]">{mimeHint}</span>
+              <span className="max-w-full truncate text-[0.625rem] font-medium uppercase">{mimeHint}</span>
             </div>
           )}
         </div>
@@ -314,7 +314,7 @@ function AssetPickerItem({ asset, selected }: { asset: AssetWithPreview; selecte
         ) : (
           <div className="flex flex-col items-center gap-1 px-1 text-center">
             {asset.mimeType.startsWith("image/") ? <ImageIcon /> : <FileIcon />}
-            <span className="max-w-full truncate text-[0.55rem] font-medium uppercase tracking-[0.14em]">{mimeHint}</span>
+            <span className="max-w-full truncate text-[0.55rem] font-medium uppercase">{mimeHint}</span>
           </div>
         )}
       </div>
@@ -369,7 +369,7 @@ function ComponentFieldInput({ field, referenceLists, value, onChange }: { field
   return (
     <Field>
       <FieldLabel>{field.label}{field.required ? " *" : ""}</FieldLabel>
-      <div className="rounded-xl border bg-muted/30 p-3 text-sm">
+      <div className="rounded-lg border bg-muted/60 p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">component</Badge>
@@ -397,7 +397,7 @@ function ComponentFieldInput({ field, referenceLists, value, onChange }: { field
               onRemove={() => removeEntry(entryId)}
             />
           ); })}
-          {!selectedIds.length && <p className="rounded-lg border bg-background p-3 text-muted-foreground">No entries selected.</p>}
+          {!selectedIds.length && <p className="rounded-md border bg-card p-3 text-muted-foreground">No entries selected.</p>}
         </div>
       </div>
       <ComponentEntryDialog open={open} onOpenChange={setOpen} field={field} referenceLists={referenceLists} selectedSet={selectedSet} onSelect={selectEntry} />
@@ -408,7 +408,7 @@ function ComponentFieldInput({ field, referenceLists, value, onChange }: { field
 
 function SelectedComponentEntry({ entryId, entry, modelName, titleField, canMove, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onRemove }: { entryId: string; entry: ContentEntry | null; modelName: string; titleField: ContentField | null; canMove: boolean; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void; onRemove: () => void }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background p-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2"><p className="truncate font-medium">{entry ? entryTitle(entry, titleField) : entryId}</p><Badge variant="outline">{modelName}</Badge></div>
         <p className="truncate font-mono text-xs text-muted-foreground">{entryId}</p>

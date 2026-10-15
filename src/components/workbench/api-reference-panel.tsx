@@ -108,27 +108,27 @@ export function ApiReferencePanel({
 
   return (
     <div className="grid gap-6">
-      <Card className="bg-primary text-primary-foreground">
+      <Card className="bg-inverse text-inverse-foreground ring-0">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <p className="mb-2 font-mono text-xs uppercase tracking-[0.24em] opacity-65">Content delivery API</p>
+              <p className="mb-2 text-sm opacity-70">Content delivery API</p>
               <CardTitle className="text-xl">API reference</CardTitle>
-              <CardDescription className="mt-1 text-primary-foreground/70">
+              <CardDescription className="mt-1 text-inverse-foreground/70">
                 Read published content over a tenant-scoped, JSON API. Choose an endpoint below to send a live request.
               </CardDescription>
             </div>
-            <Badge className="border border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground">
+            <Badge className="border border-inverse-foreground/20 bg-inverse-foreground/10 text-inverse-foreground">
               JSON
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 rounded-xl border border-primary-foreground/15 bg-primary-foreground/5 p-4 md:grid-cols-2">
+          <div className="grid gap-4 rounded-lg border border-inverse-foreground/15 bg-inverse-foreground/5 p-4 md:grid-cols-2">
             <Field>
-              <FieldLabel htmlFor="api-tenant" className="text-primary-foreground">Tenant</FieldLabel>
+              <FieldLabel htmlFor="api-tenant" className="text-inverse-foreground">Tenant</FieldLabel>
               <Select value={tenantSlug} onValueChange={setTenantSlug}>
-                <SelectTrigger id="api-tenant" className="w-full border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground">
+                <SelectTrigger id="api-tenant" className="w-full border-inverse-foreground/20 bg-inverse-foreground/10 text-inverse-foreground">
                   <SelectValue placeholder="Select a tenant" />
                 </SelectTrigger>
                 <SelectContent>
@@ -139,12 +139,12 @@ export function ApiReferencePanel({
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <FieldDescription className="text-primary-foreground/60">Used for the tenantSlug path parameter.</FieldDescription>
+              <FieldDescription className="text-inverse-foreground/60">Used for the tenantSlug path parameter.</FieldDescription>
             </Field>
             <Field>
               <div className="flex items-center justify-between gap-3">
-                <FieldLabel htmlFor="api-token" className="text-primary-foreground">Bearer token</FieldLabel>
-                <Link href="/app/settings/auth" className="text-xs text-primary-foreground/70 underline underline-offset-4 hover:text-primary-foreground">
+                <FieldLabel htmlFor="api-token" className="text-inverse-foreground">Bearer token</FieldLabel>
+                <Link href="/app/settings/auth" className="text-xs text-inverse-foreground/70 underline underline-offset-4 hover:text-inverse-foreground">
                   Manage tokens
                 </Link>
               </div>
@@ -156,9 +156,9 @@ export function ApiReferencePanel({
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
                 placeholder="cms_at_..."
-                className="border-primary-foreground/20 bg-primary-foreground/10 font-mono text-primary-foreground placeholder:text-primary-foreground/40"
+                className="border-inverse-foreground/20 bg-inverse-foreground/10 font-mono text-inverse-foreground placeholder:text-inverse-foreground/40"
               />
-              <FieldDescription className="text-primary-foreground/60">Kept only in this page and sent in the Authorization header.</FieldDescription>
+              <FieldDescription className="text-inverse-foreground/60">Kept only in this page and sent in the Authorization header.</FieldDescription>
             </Field>
           </div>
         </CardContent>
@@ -360,7 +360,7 @@ function EndpointCard({ endpoint, tenantSlug, token }: { endpoint: EndpointDefin
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="grid content-start gap-4">
               <div>
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Path parameters</p>
+                <p className="mb-3 text-sm font-medium text-muted-foreground">Path parameters</p>
                 <div className="grid gap-3">
                   <ReadOnlyParameter label="tenantSlug" value={tenantSlug} description="Selected tenant slug." />
                   {endpoint.pathParameters.map((parameter) => (
@@ -385,7 +385,7 @@ function EndpointCard({ endpoint, tenantSlug, token }: { endpoint: EndpointDefin
 
               {endpoint.queryParameters.length ? (
                 <div>
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Query parameters</p>
+                  <p className="mb-3 text-sm font-medium text-muted-foreground">Query parameters</p>
                   <div className="grid gap-3">
                     {endpoint.queryParameters.map((parameter) => (
                       <Field key={parameter.key}>
@@ -413,10 +413,10 @@ function EndpointCard({ endpoint, tenantSlug, token }: { endpoint: EndpointDefin
             <div className="grid content-start gap-4">
               <div>
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Request preview</p>
+                  <p className="text-sm font-medium text-muted-foreground">Request preview</p>
                   <CopyButton value={curl} label="Copy cURL" />
                 </div>
-                <pre className="overflow-x-auto rounded-xl bg-primary p-4 font-mono text-xs leading-relaxed text-primary-foreground">{curl}</pre>
+                <pre className="overflow-x-auto rounded-lg bg-inverse p-4 font-mono text-xs leading-relaxed text-inverse-foreground">{curl}</pre>
               </div>
 
               <Button disabled={isLoading || missingRequiredParameter} onClick={execute} className="justify-self-start">
@@ -478,7 +478,7 @@ function ResponsePanel({ result }: { result: ApiResult }) {
     <div aria-live="polite" className="grid gap-3 border-t pt-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Response</p>
+          <p className="text-sm font-medium text-muted-foreground">Response</p>
           <Badge variant={isSuccess ? "default" : "destructive"} className={isSuccess ? "bg-emerald-700 text-white" : undefined}>{statusLabel}</Badge>
           <span className="text-xs text-muted-foreground">{result.durationMs} ms</span>
           {result.requestId ? <span className="font-mono text-xs text-muted-foreground">Request {result.requestId}</span> : null}
@@ -486,7 +486,7 @@ function ResponsePanel({ result }: { result: ApiResult }) {
         <CopyButton value={formattedBody} label="Copy response" />
       </div>
       <p className="break-all font-mono text-xs text-muted-foreground">{result.url}</p>
-      <pre className="max-h-[32rem] overflow-auto rounded-xl bg-primary p-4 font-mono text-xs leading-relaxed text-primary-foreground">{formattedBody}</pre>
+      <pre className="max-h-[32rem] overflow-auto rounded-lg bg-inverse p-4 font-mono text-xs leading-relaxed text-inverse-foreground">{formattedBody}</pre>
     </div>
   );
 }

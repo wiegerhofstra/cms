@@ -135,7 +135,7 @@ export function AccessTokensPanel({ accessTokens, tenants }: AccessTokensPanelPr
             <DialogTitle>Copy your access token</DialogTitle>
             <DialogDescription>This secret is shown once. Store it securely before closing this dialog.</DialogDescription>
           </DialogHeader>
-          <div className="rounded-xl border bg-muted p-4 font-mono text-sm break-all">{plaintextToken}</div>
+          <div className="rounded-lg border bg-muted p-4 font-mono text-sm break-all">{plaintextToken}</div>
           <DialogFooter>
             <Button
               onClick={async () => {

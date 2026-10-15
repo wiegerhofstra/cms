@@ -17,6 +17,7 @@ import {
   deleteField,
   deleteManagedUser,
   deleteModel,
+  listEntries,
   moveField,
   presignAssetUpload,
   publishEntry,
@@ -102,13 +103,13 @@ export async function removeTenantFromUserAction(userId: string, tenantId: strin
   return result;
 }
 
-export async function createModelAction(tenantSlug: string, input: { name: string; slug: string; fields?: unknown[] }) {
+export async function createModelAction(tenantSlug: string, input: { name: string; slug: string; kind?: "content" | "block"; fields?: unknown[] }) {
   const result = await createModel(input, tenantSlug);
   refresh();
   return result;
 }
 
-export async function updateModelAction(tenantSlug: string, modelId: string, input: { name?: string; status?: "active" | "archived" }) {
+export async function updateModelAction(tenantSlug: string, modelId: string, input: { name?: string; status?: "active" | "archived"; kind?: "content" | "block" }) {
   const result = await updateModel(modelId, input, tenantSlug);
   refresh();
   return result;
@@ -154,6 +155,11 @@ export async function createEntryAction(tenantSlug: string, modelId: string, dat
   const result = await createEntry(modelId, data, tenantSlug);
   refresh();
   return result;
+}
+
+export async function searchEntriesAction(tenantSlug: string, modelId: string, query: string) {
+  const result = await listEntries(modelId, query, tenantSlug);
+  return result.entries;
 }
 
 export async function updateEntryAction(tenantSlug: string, entryId: string, data: Record<string, unknown>) {

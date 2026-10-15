@@ -20,5 +20,8 @@ export async function saveRevalidationSettingsAction(tenantId: string, input: un
 }
 
 export async function revalidateTenantAction(tenantId: string) {
-  return result(() => revalidateTenant(tenantId));
+  return result(async () => {
+    await revalidateTenant(tenantId);
+    revalidatePath("/app", "layout");
+  });
 }

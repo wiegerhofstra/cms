@@ -1,12 +1,12 @@
 import { Suspense } from "react";
 
 import { ModelsPanel } from "@/components/workbench/models-panel";
-import { WorkbenchPageFallback } from "@/components/workbench/workbench-loading";
+import { ModelsFallback } from "@/components/workbench/workbench-loading";
 import { getCmsPageData } from "@/lib/cms/ssr";
 
 export default function ModelsPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   return (
-    <Suspense fallback={<WorkbenchPageFallback label="Loading models" />}>
+    <Suspense fallback={<ModelsFallback />}>
       <ModelsContent params={params} />
     </Suspense>
   );

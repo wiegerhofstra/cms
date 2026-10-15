@@ -32,7 +32,7 @@ export function RevalidateButton({ tenantId, tenantName }: { tenantId: string; t
 
   return (
     <AlertDialog open={open} onOpenChange={(value) => { if (!pending) { setOpen(value); setError(null); } }}>
-      <AlertDialogTrigger asChild><Button variant="outline" disabled={pending}><RefreshCw /> Revalidate</Button></AlertDialogTrigger>
+      <AlertDialogTrigger asChild><Button variant="outline" disabled={pending} aria-label="Revalidate website"><RefreshCw /> <span className="max-sm:sr-only">Revalidate</span></Button></AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Revalidate {tenantName}?</AlertDialogTitle>

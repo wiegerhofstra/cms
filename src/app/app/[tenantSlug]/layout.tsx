@@ -1,11 +1,8 @@
 import { Suspense, type ReactNode } from "react";
 
-import { AppNav } from "@/components/workbench/app-nav";
-import { SettingsMenu } from "@/components/workbench/settings-nav";
-import { RevalidateButton } from "@/components/workbench/revalidate-button";
-import { isRevalidationConfigured } from "@/modules/revalidation/service";
 import { WorkbenchShellFallback } from "@/components/workbench/workbench-loading";
-import { getCmsPageData } from "@/lib/cms/ssr";
+import { WorkbenchShell } from "@/components/workbench/workbench-shell";
+import { getCmsShellData } from "@/lib/cms/ssr";
 
 export default function TenantWorkbenchLayout({ children, params }: { children: ReactNode; params: Promise<{ tenantSlug: string }> }) {
   return (
@@ -17,37 +14,7 @@ export default function TenantWorkbenchLayout({ children, params }: { children: 
 
 async function TenantWorkbenchShell({ children, params }: { children: ReactNode; params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params;
-  const data = await getCmsPageData({ tenantSlug, view: "dashboard" });
-  const activeTenant = data.me.memberships.find((membership) => membership.tenant.slug === tenantSlug) ?? null;
-  const tenantMenuName = activeTenant?.tenant.name ?? tenantSlug;
-  const isAdmin = data.me.user.role === "admin";
-  const canRevalidate = activeTenant ? await isRevalidationConfigured(activeTenant.tenantId) : false;
+  const shell = await getCmsShellData(tenantSlug);
 
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="grid min-h-screen lg:grid-cols-[17rem_1fr]">
-        <AppNav
-          memberships={data.me.memberships}
-          selectedTenantId={activeTenant?.tenantId}
-          tenantSlug={tenantSlug}
-          tenantMenuName={tenantMenuName}
-        />
-        <section className="min-w-0">
-          <header className="sticky top-0 z-10 border-b bg-background/90 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-mono text-xs uppercase tracking-[0.26em] text-muted-foreground">Server-rendered CMS</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight">{tenantMenuName}</h1>
-              </div>
-              <div className="flex items-center gap-2">
-                {canRevalidate && activeTenant ? <RevalidateButton key={activeTenant.tenantId} tenantId={activeTenant.tenantId} tenantName={tenantMenuName} /> : null}
-                {isAdmin ? <SettingsMenu /> : null}
-              </div>
-            </div>
-          </header>
-          <div className="grid gap-6 p-4 sm:p-6 lg:p-8">{children}</div>
-        </section>
-      </div>
-    </main>
-  );
+  return <WorkbenchShell shell={shell}>{children}</WorkbenchShell>;
 }

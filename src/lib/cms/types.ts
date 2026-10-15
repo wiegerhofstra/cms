@@ -1,6 +1,7 @@
 export type TenantRole = "owner" | "editor";
 export type AppRole = "admin" | "user";
 export type ModelStatus = "active" | "archived";
+export type ModelKind = "content" | "block";
 export type EntryStatus = "draft" | "published";
 export type FieldType = "text" | "rich_text" | "url" | "number" | "boolean" | "date" | "time" | "enum" | "asset" | "component" | "slug";
 export type AssetStatus = "pending" | "ready" | "deleted";
@@ -67,6 +68,7 @@ export type ContentModel = {
   name: string;
   slug: string;
   status: ModelStatus;
+  kind: ModelKind;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
@@ -164,6 +166,34 @@ export type WorkbenchView =
   | "assets"
   | "asset-new"
   | "asset-detail";
+
+export type WorkbenchShell = {
+  me: CmsSessionView;
+  activeMembership: TenantMembership | null;
+  models: ContentModel[];
+  revalidation: { configured: boolean; lastRevalidatedAt: string | null };
+};
+
+export type EntryListData = {
+  model: ContentModel;
+  fields: ContentField[];
+  entries: ContentEntry[];
+};
+
+export type DashboardEntry = {
+  id: string;
+  modelId: string;
+  title: string;
+  status: EntryStatus;
+  updatedAt: string;
+};
+
+export type DashboardData = {
+  recentEntries: DashboardEntry[];
+  drafts: DashboardEntry[];
+  draftCount: number;
+  entryCount: number;
+};
 
 export type ComponentReferenceList = {
   fieldId: string;

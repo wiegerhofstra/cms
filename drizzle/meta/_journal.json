@@ -78,6 +78,20 @@
       "when": 1792004114324,
       "tag": "0010_tenant_revalidation",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792048891196,
+      "tag": "0011_model_kind_and_last_revalidated",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792050935910,
+      "tag": "0012_user_invites",
+      "breakpoints": true
     }
   ]
 }
