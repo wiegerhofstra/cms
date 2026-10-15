@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ContentField, ContentModel, FieldInput, FieldType } from "@/lib/cms/types";
 import { defaultRichTextFeatures, richTextFeaturesFromConfig, withRichTextFeatures, type RichTextFeature, type RichTextFeatureConfig } from "@/lib/rich-text";
 import { createFieldAction, deleteFieldAction, moveFieldAction, updateFieldAction } from "./actions";
-import { formatJson, parseJsonObject } from "./utils";
+import { fieldHelpText, formatJson, isHiddenField, parseJsonObject } from "./utils";
 
 const fieldTypes: FieldType[] = ["text", "rich_text", "url", "number", "boolean", "date", "time", "enum", "asset", "component", "slug"];
 const fieldTypeLabels: Record<FieldType, string> = {
@@ -68,9 +68,11 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
   const [key, setKey] = useState("");
   const [keyEdited, setKeyEdited] = useState(false);
   const [label, setLabel] = useState("");
+  const [helpText, setHelpText] = useState("");
   const [type, setType] = useState<FieldType>("text");
   const [required, setRequired] = useState(false);
   const [isTitle, setIsTitle] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [targetModelSlugs, setTargetModelSlugs] = useState<string[]>([]);
   const [isList, setIsList] = useState(false);
   const [uniqueSlug, setUniqueSlug] = useState(false);
@@ -93,6 +95,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
     if (type === "enum") {
       config.options = serializeEnumOptions(enumOptions);
     }
+    config = withEditorConfig(config, helpText, hidden);
     return { key, label, type, required, config, isTitle };
   }
 
@@ -100,9 +103,11 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
     setKey("");
     setKeyEdited(false);
     setLabel("");
+    setHelpText("");
     setType("text");
     setRequired(false);
     setIsTitle(false);
+    setHidden(false);
     setTargetModelSlugs([]);
     setIsList(false);
     setUniqueSlug(false);
@@ -158,6 +163,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
               />
               <FieldDescription>The name content editors will see.</FieldDescription>
             </Field>
+            <HelpTextField id="new-field-help" value={helpText} onChange={setHelpText} />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="new-field-key">API key</FieldLabel>
@@ -208,6 +214,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
             <div className="grid gap-3 sm:grid-cols-2">
               <FieldToggle checked={required} onCheckedChange={setRequired} title="Required field" description="Editors must provide a value before publishing." />
               <FieldToggle checked={isTitle} onCheckedChange={setIsTitle} title="Use as entry title" description="Show this value when identifying entries." />
+              <HiddenFieldToggle checked={hidden} onCheckedChange={setHidden} />
             </div>
             {type !== "component" ? (
               <AdvancedConfig value={configJson} onChange={setConfigJson} rows={4} />
@@ -280,6 +287,7 @@ export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             {field.required ? <Badge variant="outline">Required</Badge> : null}
             {field.isTitle ? <Badge variant="outline">Entry title</Badge> : null}
+            {isHiddenField(field) ? <Badge variant="outline">Hidden</Badge> : null}
             <span className="min-w-0 truncate">{fieldSummary(field)}</span>
           </div>
           <FieldActions tenantSlug={tenantSlug} field={field} models={models} modelId={modelId} isPending={isPending} run={run} />
@@ -338,9 +346,11 @@ function FieldActions({ tenantSlug, field, models, modelId, isPending, run }: {
 
 function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onSaved }: { tenantSlug: string; field: ContentField; models: ContentModel[]; modelId: string; isPending: boolean; run: (action: () => Promise<unknown>, success: string, onSuccess?: () => void) => void; onSaved: () => void }) {
   const [label, setLabel] = useState(field.label);
-  const [config, setConfig] = useState(formatJson(field.type === "enum" ? withoutEnumOptions(field.config) : field.config));
+  const [helpText, setHelpText] = useState(fieldHelpText(field));
+  const [config, setConfig] = useState(formatJson(withoutEditorConfig(field.type === "enum" ? withoutEnumOptions(field.config) : field.config)));
   const [required, setRequired] = useState(field.required);
   const [isTitle, setIsTitle] = useState(field.isTitle);
+  const [hidden, setHidden] = useState(isHiddenField(field));
   const [targetModelSlugs, setTargetModelSlugs] = useState(field.targetModels.map((model) => model.slug));
   const [isList, setIsList] = useState(field.isList);
   const [uniqueSlug, setUniqueSlug] = useState(field.config.unique === true);
@@ -350,6 +360,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onS
   return (
     <FieldGroup className="px-4 py-2">
       <Field><FieldLabel htmlFor={`field-${field.id}-label`}>Label</FieldLabel><Input id={`field-${field.id}-label`} aria-label="Field label" value={label} onChange={(event) => setLabel(event.target.value)} /><FieldDescription>The name content editors will see.</FieldDescription></Field>
+      <HelpTextField id={`field-${field.id}-help`} value={helpText} onChange={setHelpText} />
       {field.type === "component" && (
         <Field>
           <FieldLabel>Allowed component models</FieldLabel>
@@ -363,6 +374,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onS
       <div className="grid gap-3 sm:grid-cols-2">
         <FieldToggle checked={required} onCheckedChange={setRequired} title="Required field" description="Editors must provide a value before publishing." />
         <FieldToggle checked={isTitle} onCheckedChange={setIsTitle} title="Use as entry title" description="Show this value when identifying entries." />
+        <HiddenFieldToggle checked={hidden} onCheckedChange={setHidden} />
       </div>
       {field.type !== "component" ? <AdvancedConfig value={config} onChange={setConfig} rows={field.type === "enum" ? 4 : 8} /> : null}
       <div className="sticky bottom-0 -mx-4 mt-2 flex justify-end gap-2 border-t bg-popover px-4 py-4">
@@ -381,6 +393,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onS
           if (field.type === "enum") {
             nextConfig.options = serializeEnumOptions(enumOptions);
           }
+          nextConfig = withEditorConfig(nextConfig, helpText, hidden);
           await updateFieldAction(tenantSlug, modelId, field.id, { label, required, config: nextConfig, isTitle });
         }, "Field updated", onSaved)}><Save data-icon="inline-start" /> {isPending ? "Saving…" : "Save changes"}</Button>
       </div>
@@ -395,6 +408,35 @@ function FieldToggle({ checked, onCheckedChange, title, description }: { checked
       <span><span className="block font-medium">{title}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{description}</span></span>
     </label>
   );
+}
+
+function HelpTextField({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>Help text</FieldLabel>
+      <Input id={id} placeholder="e.g. Shown as the page heading" value={value} onChange={(event) => onChange(event.target.value)} />
+      <FieldDescription>Shown under the field in the entry form, and as the field description in API exports.</FieldDescription>
+    </Field>
+  );
+}
+
+function HiddenFieldToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) {
+  return <FieldToggle checked={checked} onCheckedChange={onCheckedChange} title="Hide from editors" description="Move this field under “More fields” at the bottom of the entry form." />;
+}
+
+// Help text and visibility have their own controls, so they're kept out of the raw JSON editor.
+function withoutEditorConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const nextConfig = { ...config };
+  delete nextConfig.description;
+  delete nextConfig.hidden;
+  return nextConfig;
+}
+
+function withEditorConfig(config: Record<string, unknown>, helpText: string, hidden: boolean): Record<string, unknown> {
+  const nextConfig = withoutEditorConfig(config);
+  if (helpText.trim()) nextConfig.description = helpText.trim();
+  if (hidden) nextConfig.hidden = true;
+  return nextConfig;
 }
 
 function AdvancedConfig({ value, onChange, rows }: { value: string; onChange: (value: string) => void; rows: number }) {
@@ -419,7 +461,7 @@ function fieldSummary(field: ContentField): string {
     return `${count} option${count === 1 ? "" : "s"}`;
   }
   if (field.type === "slug" && field.config.unique === true) return "Unique values";
-  if (Object.keys(field.config).length > 0) return "Custom settings";
+  if (Object.keys(withoutEditorConfig(field.config)).length > 0) return "Custom settings";
   return "";
 }
 

@@ -63,8 +63,25 @@ export function normalizeEntryData(fields: ContentField[], data: Record<string, 
   return normalized;
 }
 
-export function hasMissingRequiredFields(fields: ContentField[], data: Record<string, unknown>): boolean {
-  return fields.some((field) => field.required && isEmptyFieldValue(data[field.key]));
+export function missingRequiredFields(fields: ContentField[], data: Record<string, unknown>): ContentField[] {
+  return fields.filter((field) => field.required && isEmptyFieldValue(data[field.key]));
+}
+
+export function isHiddenField(field: ContentField): boolean {
+  return field.config.hidden === true;
+}
+
+export function fieldHelpText(field: ContentField): string {
+  return typeof field.config.description === "string" ? field.config.description.trim() : "";
+}
+
+/** Order-independent snapshot of the data that would be saved, used to detect unsaved changes. */
+export function entryDataSnapshot(fields: ContentField[], data: Record<string, unknown>): string {
+  return JSON.stringify(normalizeEntryData(fields, data), (_key, value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value,
+  );
 }
 
 export function isEmptyFieldValue(value: unknown): boolean {

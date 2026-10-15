@@ -23,6 +23,8 @@
   --accent-ink: #fff7ed;
   --ink-soft: #312a22;
   --destructive: #b42318;
+  --status-draft: #b7791f;
+  --status-published: #2f7d4f;
   --border: #d9cdbb;
   --input: #d9cdbb;
   --ring: #d95d39;
@@ -71,6 +73,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-status-draft: var(--status-draft);
+  --color-status-published: var(--status-published);
   --color-accent-foreground: var(--accent-foreground);
   --color-muted-foreground: var(--muted-foreground);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -114,6 +118,8 @@ body {
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --status-draft: #e0a43a;
+  --status-published: #5cb67e;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

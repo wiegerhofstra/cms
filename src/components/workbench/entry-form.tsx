@@ -2,14 +2,13 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { ArrowDown, ArrowUp, FileIcon, ImageIcon, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { ArrowDown, ArrowUp, ChevronRight, FileIcon, ImageIcon, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,42 +18,62 @@ import { TimePicker } from "@/components/ui/time-picker";
 import type { AssetWithPreview, ContentEntry, ContentField } from "@/lib/cms/types";
 import type { ComponentReferenceList } from "./types";
 import { RichTextEditor } from "./rich-text-editor";
-import { entryTitle, getEnumOptions, numberInputValue, stringValue } from "./utils";
+import { entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, numberInputValue, parseJsonObject, stringValue } from "./utils";
 
 type EntryFormProps = {
   fields: ContentField[];
   assets: AssetWithPreview[];
   componentReferences: ComponentReferenceList[];
   data: Record<string, unknown>;
-  mode: "create" | "edit";
   onChange: (data: Record<string, unknown>) => void;
 };
 
-export function EntryForm({ fields, assets, componentReferences, data, mode, onChange }: EntryFormProps) {
+export function EntryForm({ fields, assets, componentReferences, data, onChange }: EntryFormProps) {
   if (!fields.length) {
     return (
-      <div className="rounded-2xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-        This model has no fields yet. Add fields to the model before building structured entries.
+      <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+        This model has no fields yet. Add fields to the model before creating entries.
       </div>
     );
   }
 
-  function updateField(key: string, value: unknown) {
-    onChange({ ...data, [key]: value });
+  const visibleFields = fields.filter((field) => !isHiddenField(field));
+  const hiddenFields = fields.filter(isHiddenField);
+  const hiddenFieldsNeedInput = missingRequiredFields(hiddenFields, data).length > 0;
+
+  function renderField(field: ContentField) {
+    return (
+      <EntryFieldInput key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => onChange({ ...data, [field.key]: value })} />
+    );
   }
 
   return (
-    <div className="rounded-2xl border p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">{mode === "create" ? "Create from model" : "Edit from model"}</p>
-        <Badge variant="secondary">{fields.length} fields</Badge>
-      </div>
-      <FieldGroup>
-        {fields.map((field) => (
-          <EntryFieldInput key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => updateField(field.key, value)} />
-        ))}
-      </FieldGroup>
+    <div className="flex flex-col gap-6">
+      {visibleFields.length ? <FieldGroup>{visibleFields.map(renderField)}</FieldGroup> : null}
+      {hiddenFields.length ? (
+        <details className="group rounded-xl border" open={hiddenFieldsNeedInput || undefined}>
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+            More fields
+            <span className="font-normal text-muted-foreground">{hiddenFields.length}</span>
+          </summary>
+          <div className="border-t p-4">
+            <FieldGroup>{hiddenFields.map(renderField)}</FieldGroup>
+          </div>
+        </details>
+      ) : null}
     </div>
+  );
+}
+
+function FieldHelp({ field, hint, hintId }: { field: ContentField; hint?: string; hintId?: string }) {
+  const helpText = fieldHelpText(field);
+
+  return (
+    <>
+      {helpText ? <FieldDescription>{helpText}</FieldDescription> : null}
+      {hint ? <FieldDescription id={hintId}>{hint}</FieldDescription> : null}
+    </>
   );
 }
 
@@ -67,7 +86,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
         <Checkbox id={fieldId} checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} />
         <div>
           <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-          <FieldDescription>{field.key}</FieldDescription>
+          <FieldHelp field={field} />
         </div>
       </Field>
     );
@@ -78,7 +97,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
         <RichTextEditor id={fieldId} value={value} config={field.config} assets={assets} onChange={onChange} />
-        <FieldDescription>{field.key}</FieldDescription>
+        <FieldHelp field={field} />
       </Field>
     );
   }
@@ -88,7 +107,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
         <Input id={fieldId} type="number" value={numberInputValue(value)} onChange={(event) => onChange(event.target.value === "" ? "" : Number(event.target.value))} />
-        <FieldDescription>{field.key}</FieldDescription>
+        <FieldHelp field={field} />
       </Field>
     );
   }
@@ -98,7 +117,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
         <TimePicker id={fieldId} label={field.label} value={stringValue(value)} required={field.required} describedBy={`${fieldId}-description`} onChange={onChange} />
-        <FieldDescription id={`${fieldId}-description`}>{field.key}. Local time in 24-hour format (00:00–23:59). Type two digits or use the arrow keys to choose.</FieldDescription>
+        <FieldHelp field={field} hintId={`${fieldId}-description`} hint="Local time in 24-hour format (00:00–23:59). Type two digits or use the arrow keys to choose." />
       </Field>
     );
   }
@@ -108,7 +127,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
         <Input id={fieldId} type="date" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-        <FieldDescription>{field.key}</FieldDescription>
+        <FieldHelp field={field} />
       </Field>
     );
   }
@@ -118,7 +137,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
         <Input id={fieldId} type="url" inputMode="url" placeholder="https://example.com" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-        <FieldDescription>{field.key}. Enter a complete URL, including the protocol.</FieldDescription>
+        <FieldHelp field={field} hint="Enter a complete URL, including https://." />
       </Field>
     );
   }
@@ -127,8 +146,8 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
     return (
       <Field>
         <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-        <Input id={fieldId} value={stringValue(value)} pattern="[a-z0-9_-]+" placeholder="my-page_slug" onChange={(event) => onChange(normalizeSlugInput(event.target.value))} />
-        <FieldDescription>{field.key}. Use lowercase letters, numbers, hyphens, and underscores{field.config.unique === true ? "; must be unique" : ""}.</FieldDescription>
+        <Input id={fieldId} value={stringValue(value)} pattern="[a-z0-9_\-]+" placeholder="my-page_slug" onChange={(event) => onChange(normalizeSlugInput(event.target.value))} />
+        <FieldHelp field={field} hint={`Use lowercase letters, numbers, hyphens, and underscores${field.config.unique === true ? ". Must be unique" : ""}.`} />
       </Field>
     );
   }
@@ -141,7 +160,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
     <Field>
       <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
       <Input id={fieldId} value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-      <FieldDescription>{field.key}</FieldDescription>
+      <FieldHelp field={field} />
     </Field>
   );
 }
@@ -154,7 +173,7 @@ function EnumFieldInput({ field, value, onChange }: { field: ContentField; value
       <Field>
         <FieldLabel>{field.label}{field.required ? " *" : ""}</FieldLabel>
         <Input value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-        <FieldDescription>{field.key}. Add config.options to render a dropdown.</FieldDescription>
+        <FieldHelp field={field} hint="Add options to this field in the model to show a dropdown." />
       </Field>
     );
   }
@@ -166,7 +185,7 @@ function EnumFieldInput({ field, value, onChange }: { field: ContentField; value
         <SelectTrigger className="w-full"><SelectValue placeholder="Select an option" /></SelectTrigger>
         <SelectContent><SelectGroup>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectGroup></SelectContent>
       </Select>
-      <FieldDescription>{field.key}</FieldDescription>
+      <FieldHelp field={field} />
     </Field>
   );
 }
@@ -185,7 +204,6 @@ function AssetFieldInput({ field, assets, value, onChange }: { field: ContentFie
   return (
     <Field>
       <FieldLabel>{field.label}{field.required ? " *" : ""}</FieldLabel>
-      {!assetId ? <Input value={assetId} onChange={(event) => onChange(event.target.value)} placeholder="Asset id" /> : null}
       {assetId ? <SelectedAssetCard assetId={assetId} asset={selectedAsset} onChange={() => setOpen(true)} onRemove={() => onChange(null)} /> : null}
       {!assetId ? (
         <Button type="button" variant="outline" className="w-fit" disabled={!readyAssets.length} onClick={() => setOpen(true)}>
@@ -193,7 +211,7 @@ function AssetFieldInput({ field, assets, value, onChange }: { field: ContentFie
         </Button>
       ) : null}
       <AssetPickerDialog open={open} onOpenChange={setOpen} assets={readyAssets} selectedAssetId={assetId} onSelect={selectAsset} />
-      <FieldDescription>{field.key}. Entry stores the selected asset id.</FieldDescription>
+      <FieldHelp field={field} />
     </Field>
   );
 }
@@ -383,7 +401,7 @@ function ComponentFieldInput({ field, referenceLists, value, onChange }: { field
         </div>
       </div>
       <ComponentEntryDialog open={open} onOpenChange={setOpen} field={field} referenceLists={referenceLists} selectedSet={selectedSet} onSelect={selectEntry} />
-      <FieldDescription>{field.key}. Select {field.isList ? "one or more reusable entries" : "a reusable entry"} from {field.targetModels.length === 1 ? field.targetModels[0]?.name : `${field.targetModels.length} allowed models`}.</FieldDescription>
+      <FieldHelp field={field} hint={`Select ${field.isList ? "one or more entries" : "an entry"} from ${field.targetModels.length === 1 ? field.targetModels[0]?.name : `${field.targetModels.length} allowed models`}.`} />
     </Field>
   );
 }
@@ -484,28 +502,43 @@ function normalizeSlugInput(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 
-export function AdvancedJsonEditor({ value, onChange, onApply }: { value: string; onChange: (value: string) => void; onApply: () => void }) {
+export function EntryJsonDialog({ open, onOpenChange, data, onApply }: { open: boolean; onOpenChange: (open: boolean) => void; data: Record<string, unknown>; onApply: (data: Record<string, unknown>) => void }) {
   return (
-    <details className="rounded-2xl border p-4">
-      <summary className="cursor-pointer list-none text-sm font-medium [&::-webkit-details-marker]:hidden">
-        Advanced JSON
-      </summary>
-      <div className="mt-4">
-        <Field>
-          <Textarea rows={6} value={value} onChange={(event) => onChange(event.target.value)} />
-          <FieldDescription>Use this escape hatch for custom keys or unsupported field configuration.</FieldDescription>
-        </Field>
-        <Button className="mt-3" variant="outline" onClick={() => {
-          try {
-            onApply();
-            toast.success("JSON applied");
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Invalid JSON");
-          }
-        }}>
-          Apply JSON to form
-        </Button>
-      </div>
-    </details>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <EntryJsonEditor initialData={data} onCancel={() => onOpenChange(false)} onApply={(nextData) => { onApply(nextData); onOpenChange(false); }} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Mounted only while the dialog is open, so each opening starts from the current form data.
+function EntryJsonEditor({ initialData, onCancel, onApply }: { initialData: Record<string, unknown>; onCancel: () => void; onApply: (data: Record<string, unknown>) => void }) {
+  const [value, setValue] = useState(() => formatJson(initialData));
+  const [error, setError] = useState("");
+
+  function apply() {
+    try {
+      onApply(parseJsonObject(value));
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : "Invalid JSON");
+    }
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Edit as JSON</DialogTitle>
+        <DialogDescription>Edit the raw entry data, including keys without a field in the form. Changes apply to the form; save the entry to keep them.</DialogDescription>
+      </DialogHeader>
+      <Field data-invalid={Boolean(error) || undefined}>
+        <Textarea aria-label="Entry JSON" aria-invalid={Boolean(error) || undefined} className="max-h-[60vh] min-h-72 font-mono text-xs" spellCheck={false} value={value} onChange={(event) => { setValue(event.target.value); setError(""); }} />
+        {error ? <FieldDescription className="text-destructive">{error}</FieldDescription> : null}
+      </Field>
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={apply}>Apply to form</Button>
+      </DialogFooter>
+    </>
   );
 }
