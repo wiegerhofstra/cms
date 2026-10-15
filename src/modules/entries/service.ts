@@ -1,9 +1,11 @@
 import { and, eq, inArray, max, ne, sql } from "drizzle-orm";
 
 import { type Db } from "@/db";
-import { contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions } from "@/db/schema";
+import { contentEntries, contentModelFields, contentModelFieldTargets, contentModels, entryRevisions, type EntryTranslations } from "@/db/schema";
 import { CmsError as ApiError } from "@/lib/cms/errors";
 import { isEmptyRichTextDocument } from "@/lib/rich-text";
+import { isLocalizedField, sanitizeTranslations, type TenantLocalization } from "@/modules/localization/locales";
+import { getTenantLocalization } from "@/modules/localization/tenant";
 import { isValidTimeValue } from "./time";
 
 type ContentModelFieldRow = typeof contentModelFields.$inferSelect;
@@ -17,6 +19,7 @@ export async function createEntryRevision(
     tenantId: string;
     entryId: string;
     data: Record<string, unknown>;
+    translations?: EntryTranslations;
     userId: string;
   },
 ): Promise<void> {
@@ -30,6 +33,7 @@ export async function createEntryRevision(
     entryId: input.entryId,
     version: (versionRow?.value ?? 0) + 1,
     data: input.data,
+    translations: input.translations ?? {},
     createdBy: input.userId,
   });
 }
@@ -68,16 +72,16 @@ export async function validateEntryData(
   modelId: string,
   data: Record<string, unknown>,
   excludeEntryId?: string,
+  translations: EntryTranslations = {},
 ): Promise<void> {
-  const fields = await db
-    .select()
-    .from(contentModelFields)
-    .where(and(eq(contentModelFields.tenantId, tenantId), eq(contentModelFields.modelId, modelId)))
-    .orderBy(contentModelFields.position);
+  const fields = await getModelFields(db, tenantId, modelId);
+  await validateFieldFormats(db, tenantId, modelId, fields, data, translations, excludeEntryId);
+}
 
-  await validateSlugFields(db, tenantId, modelId, fields, data, excludeEntryId);
-  validateUrlFields(fields, data);
-  validateTimeFields(fields, data);
+/** Drops translations for languages the tenant does not use and for fields that are not translatable. */
+export async function sanitizeEntryTranslations(db: EntryReadDb, tenantId: string, modelId: string, translations: unknown): Promise<EntryTranslations> {
+  const [fields, localization] = await Promise.all([getModelFields(db, tenantId, modelId), getTenantLocalization(db, tenantId)]);
+  return sanitizeTranslations(fields, translations, localization);
 }
 
 export async function validateEntryForPublish(db: EntryReadDb, tenantId: string, entryId: string): Promise<void> {
@@ -86,7 +90,7 @@ export async function validateEntryForPublish(db: EntryReadDb, tenantId: string,
     throw new ApiError("NOT_FOUND", "Entry was not found");
   }
 
-  await validateEntryDataForPublish(db, tenantId, entry.modelId, entry.data, entry.id);
+  await validateEntryDataForPublish(db, tenantId, entry.modelId, entry.data, entry.id, entry.translations);
 }
 
 export async function validateEntryDataForPublish(
@@ -95,17 +99,12 @@ export async function validateEntryDataForPublish(
   modelId: string,
   data: Record<string, unknown>,
   excludeEntryId?: string,
+  translations: EntryTranslations = {},
 ): Promise<void> {
-  const fields = await db
-    .select()
-    .from(contentModelFields)
-    .where(and(eq(contentModelFields.tenantId, tenantId), eq(contentModelFields.modelId, modelId)))
-    .orderBy(contentModelFields.position);
+  const fields = await getModelFields(db, tenantId, modelId);
+  await validateFieldFormats(db, tenantId, modelId, fields, data, translations, excludeEntryId);
 
-  await validateSlugFields(db, tenantId, modelId, fields, data, excludeEntryId);
-  validateUrlFields(fields, data);
-  validateTimeFields(fields, data);
-
+  // Translations are optional: a required field only needs a value in the default language.
   for (const field of fields) {
     const value = data[field.key];
 
@@ -120,10 +119,52 @@ export async function validateEntryDataForPublish(
   }
 }
 
+function getModelFields(db: EntryReadDb, tenantId: string, modelId: string) {
+  return db
+    .select()
+    .from(contentModelFields)
+    .where(and(eq(contentModelFields.tenantId, tenantId), eq(contentModelFields.modelId, modelId)))
+    .orderBy(contentModelFields.position);
+}
+
+async function validateFieldFormats(
+  db: EntryReadDb,
+  tenantId: string,
+  modelId: string,
+  fields: ContentModelFieldRow[],
+  data: Record<string, unknown>,
+  translations: EntryTranslations,
+  excludeEntryId?: string,
+): Promise<void> {
+  const localization = await getTenantLocalization(db, tenantId);
+  const localizedFields = fields.filter(isLocalizedField);
+
+  validateUrlFields(fields, data);
+  validateTimeFields(fields, data);
+  for (const [locale, values] of Object.entries(translations)) {
+    validateUrlFields(localizedFields, values, locale);
+    validateSlugFormats(localizedFields, values, locale);
+  }
+  await validateSlugFields(db, tenantId, modelId, fields, data, translations, localization, excludeEntryId);
+}
+
 function validateTimeFields(fields: ContentModelFieldRow[], data: Record<string, unknown>): void {
   for (const field of fields) {
     if (field.type === "time" && !isValidTimeValue(data[field.key])) {
       throw new ApiError("VALIDATION_ERROR", `Time field must use HH:mm (00:00–23:59): ${field.key}`);
+    }
+  }
+}
+
+function validateSlugFormats(fields: ContentModelFieldRow[], data: Record<string, unknown>, locale?: string): void {
+  for (const field of fields) {
+    if (field.type !== "slug") continue;
+
+    const value = data[field.key];
+    if (isEmptySlugValue(value)) continue;
+
+    if (typeof value !== "string" || !slugPattern.test(value)) {
+      throw new ApiError("VALIDATION_ERROR", `Slug field must use lowercase letters, numbers, hyphens, and underscores: ${fieldName(field, locale)}`);
     }
   }
 }
@@ -134,41 +175,48 @@ async function validateSlugFields(
   modelId: string,
   fields: ContentModelFieldRow[],
   data: Record<string, unknown>,
+  translations: EntryTranslations,
+  localization: TenantLocalization,
   excludeEntryId?: string,
 ): Promise<void> {
-  const slugFields = fields.filter((field) => field.type === "slug");
+  validateSlugFormats(fields, data);
 
-  for (const field of slugFields) {
-    const value = data[field.key];
-    if (isEmptySlugValue(value)) continue;
+  for (const field of fields) {
+    if (field.type !== "slug" || field.config.unique !== true) continue;
 
-    if (typeof value !== "string" || !slugPattern.test(value)) {
-      throw new ApiError("VALIDATION_ERROR", `Slug field must use lowercase letters, numbers, hyphens, and underscores: ${field.key}`);
-    }
+    // A translated slug must be unique among the values entries show in that language, including fallbacks to the default.
+    const locales = isLocalizedField(field) ? localization.locales : [localization.defaultLocale];
+    for (const locale of locales) {
+      const isDefault = locale === localization.defaultLocale;
+      const translated = isDefault ? undefined : translations[locale]?.[field.key];
+      const value = isEmptySlugValue(translated) ? data[field.key] : translated;
+      if (isEmptySlugValue(value)) continue;
 
-    if (field.config.unique !== true) continue;
+      const storedValue = isDefault
+        ? sql`${contentEntries.data}->>${field.key}`
+        : sql`coalesce(nullif(${contentEntries.translations}->${locale}->>${field.key}, ''), ${contentEntries.data}->>${field.key})`;
+      const filters = [
+        eq(contentEntries.tenantId, tenantId),
+        eq(contentEntries.modelId, modelId),
+        sql`${contentEntries.deletedAt} is null`,
+        sql`${storedValue} = ${value}`,
+      ];
+      if (excludeEntryId) filters.push(ne(contentEntries.id, excludeEntryId));
 
-    const filters = [
-      eq(contentEntries.tenantId, tenantId),
-      eq(contentEntries.modelId, modelId),
-      sql`${contentEntries.deletedAt} is null`,
-      sql`${contentEntries.data}->>${field.key} = ${value}`,
-    ];
-    if (excludeEntryId) filters.push(ne(contentEntries.id, excludeEntryId));
+      const [existingEntry] = await db
+        .select({ id: contentEntries.id })
+        .from(contentEntries)
+        .where(and(...filters))
+        .limit(1);
 
-    const [existingEntry] = await db
-      .select({ id: contentEntries.id })
-      .from(contentEntries)
-      .where(and(...filters))
-      .limit(1);
-
-    if (existingEntry) {
-      throw new ApiError("CONFLICT", `Slug is already used by another entry: ${field.key}`);
+      if (existingEntry) {
+        throw new ApiError("CONFLICT", `Slug is already used by another entry: ${fieldName(field, isDefault || locales.length === 1 ? undefined : locale)}`);
+      }
     }
   }
 }
 
-function validateUrlFields(fields: ContentModelFieldRow[], data: Record<string, unknown>): void {
+function validateUrlFields(fields: ContentModelFieldRow[], data: Record<string, unknown>, locale?: string): void {
   for (const field of fields) {
     if (field.type !== "url") continue;
 
@@ -176,9 +224,13 @@ function validateUrlFields(fields: ContentModelFieldRow[], data: Record<string, 
     if (isEmptySlugValue(value)) continue;
 
     if (typeof value !== "string" || !URL.canParse(value)) {
-      throw new ApiError("VALIDATION_ERROR", `URL field must contain a valid absolute URL: ${field.key}`);
+      throw new ApiError("VALIDATION_ERROR", `URL field must contain a valid absolute URL: ${fieldName(field, locale)}`);
     }
   }
+}
+
+function fieldName(field: ContentModelFieldRow, locale?: string): string {
+  return locale ? `${field.key} (${locale})` : field.key;
 }
 
 async function validateComponentValue(

@@ -27,6 +27,7 @@ export const fieldInputSchema = z.object({
   required: z.boolean().optional().default(false),
   config: z.record(z.string(), z.unknown()).optional().default({}),
   isTitle: z.boolean().optional().default(false),
+  localized: z.boolean().optional().default(false),
 });
 
 export const createModelSchema = z

@@ -8,7 +8,7 @@ export async function GET(request: Request, context: RouteContext<"/api/content/
     const result = await listPublishedEntries({ tenantId: principal.tenantId, modelSlug, ...query });
     return {
       data: result.entries,
-      meta: { nextCursor: result.nextCursor, maxDepth: query.maxDepth },
+      meta: { nextCursor: result.nextCursor, maxDepth: query.maxDepth, locale: result.locale },
     };
   });
 }

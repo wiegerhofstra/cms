@@ -5,9 +5,10 @@ export async function GET(request: Request, context: RouteContext<"/api/content/
   const { tenantSlug, modelSlug, entryId } = await context.params;
   return handleContentApiRequest(request, tenantSlug, async (principal) => {
     const query = parseDeliveryQuery(request.url, false);
+    const result = await getPublishedEntry({ tenantId: principal.tenantId, modelSlug, entryId, maxDepth: query.maxDepth, locale: query.locale });
     return {
-      data: await getPublishedEntry({ tenantId: principal.tenantId, modelSlug, entryId, maxDepth: query.maxDepth }),
-      meta: { maxDepth: query.maxDepth },
+      data: result.entry,
+      meta: { maxDepth: query.maxDepth, locale: result.locale },
     };
   });
 }

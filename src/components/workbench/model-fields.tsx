@@ -26,7 +26,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import type { ContentField, ContentModel, FieldInput, FieldType } from "@/lib/cms/types";
+import type { ContentField, ContentModel, FieldInput, FieldType, TenantLocalization } from "@/lib/cms/types";
+import { isLocalizableFieldType, localeLabel } from "@/modules/localization/locales";
 import { defaultRichTextFeatures, richTextFeaturesFromConfig, withRichTextFeatures, type RichTextFeature, type RichTextFeatureConfig } from "@/lib/rich-text";
 import { createFieldAction, deleteFieldAction, moveFieldAction, updateFieldAction } from "./actions";
 import { fieldHelpText, formatJson, isHiddenField, parseJsonObject } from "./utils";
@@ -61,7 +62,7 @@ function normalizeFieldKey(value: string): string {
     .slice(0, 80);
 }
 
-export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: string; models: ContentModel[]; modelId: string }) {
+export function FieldEditor({ tenantSlug, models, modelId, localization }: { tenantSlug: string; models: ContentModel[]; modelId: string; localization: TenantLocalization }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -73,6 +74,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
   const [required, setRequired] = useState(false);
   const [isTitle, setIsTitle] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [localized, setLocalized] = useState(false);
   const [targetModelSlugs, setTargetModelSlugs] = useState<string[]>([]);
   const [isList, setIsList] = useState(false);
   const [uniqueSlug, setUniqueSlug] = useState(false);
@@ -96,7 +98,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
       config.options = serializeEnumOptions(enumOptions);
     }
     config = withEditorConfig(config, helpText, hidden);
-    return { key, label, type, required, config, isTitle };
+    return { key, label, type, required, config, isTitle, localized: localized && isLocalizableFieldType(type) };
   }
 
   function reset() {
@@ -108,6 +110,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
     setRequired(false);
     setIsTitle(false);
     setHidden(false);
+    setLocalized(false);
     setTargetModelSlugs([]);
     setIsList(false);
     setUniqueSlug(false);
@@ -215,6 +218,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
               <FieldToggle checked={required} onCheckedChange={setRequired} title="Required field" description="Editors must provide a value before publishing." />
               <FieldToggle checked={isTitle} onCheckedChange={setIsTitle} title="Use as entry title" description="Show this value when identifying entries." />
               <HiddenFieldToggle checked={hidden} onCheckedChange={setHidden} />
+              {localization.locales.length > 1 && isLocalizableFieldType(type) ? <TranslatableFieldToggle checked={localized} onCheckedChange={setLocalized} localization={localization} /> : null}
             </div>
             {type !== "component" ? (
               <AdvancedConfig value={configJson} onChange={setConfigJson} rows={4} />
@@ -235,7 +239,7 @@ export function FieldEditor({ tenantSlug, models, modelId }: { tenantSlug: strin
   );
 }
 
-export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug: string; fields: ContentField[]; models: ContentModel[]; modelId: string }) {
+export function FieldTable({ tenantSlug, fields, models, modelId, localization }: { tenantSlug: string; fields: ContentField[]; models: ContentModel[]; modelId: string; localization: TenantLocalization }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const isArchived = models.find((model) => model.id === modelId)?.status === "archived";
@@ -288,9 +292,10 @@ export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug
             {field.required ? <Badge variant="outline">Required</Badge> : null}
             {field.isTitle ? <Badge variant="outline">Entry title</Badge> : null}
             {isHiddenField(field) ? <Badge variant="outline">Hidden</Badge> : null}
+            {field.localized ? <Badge variant="outline">Translatable</Badge> : null}
             <span className="min-w-0 truncate">{fieldSummary(field)}</span>
           </div>
-          <FieldActions tenantSlug={tenantSlug} field={field} models={models} modelId={modelId} isPending={isPending} run={run} />
+          <FieldActions tenantSlug={tenantSlug} field={field} models={models} modelId={modelId} localization={localization} isPending={isPending} run={run} />
         </div>
       )) : (
         <div className="px-4 py-10 text-center">
@@ -302,11 +307,12 @@ export function FieldTable({ tenantSlug, fields, models, modelId }: { tenantSlug
   );
 }
 
-function FieldActions({ tenantSlug, field, models, modelId, isPending, run }: {
+function FieldActions({ tenantSlug, field, models, modelId, localization, isPending, run }: {
   tenantSlug: string;
   field: ContentField;
   models: ContentModel[];
   modelId: string;
+  localization: TenantLocalization;
   isPending: boolean;
   run: (action: () => Promise<unknown>, success: string, onSuccess?: () => void) => void;
 }) {
@@ -322,7 +328,7 @@ function FieldActions({ tenantSlug, field, models, modelId, isPending, run }: {
             <SheetTitle>Edit {field.label}</SheetTitle>
             <SheetDescription>Update how this field appears and behaves for content editors.</SheetDescription>
           </SheetHeader>
-          <EditFieldForm tenantSlug={tenantSlug} field={field} models={models} modelId={modelId} isPending={isPending} run={run} onSaved={() => setOpen(false)} />
+          <EditFieldForm tenantSlug={tenantSlug} field={field} models={models} modelId={modelId} localization={localization} isPending={isPending} run={run} onSaved={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
       <AlertDialog>
@@ -344,13 +350,14 @@ function FieldActions({ tenantSlug, field, models, modelId, isPending, run }: {
   );
 }
 
-function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onSaved }: { tenantSlug: string; field: ContentField; models: ContentModel[]; modelId: string; isPending: boolean; run: (action: () => Promise<unknown>, success: string, onSuccess?: () => void) => void; onSaved: () => void }) {
+function EditFieldForm({ tenantSlug, field, models, modelId, localization, isPending, run, onSaved }: { tenantSlug: string; field: ContentField; models: ContentModel[]; modelId: string; localization: TenantLocalization; isPending: boolean; run: (action: () => Promise<unknown>, success: string, onSuccess?: () => void) => void; onSaved: () => void }) {
   const [label, setLabel] = useState(field.label);
   const [helpText, setHelpText] = useState(fieldHelpText(field));
   const [config, setConfig] = useState(formatJson(withoutEditorConfig(field.type === "enum" ? withoutEnumOptions(field.config) : field.config)));
   const [required, setRequired] = useState(field.required);
   const [isTitle, setIsTitle] = useState(field.isTitle);
   const [hidden, setHidden] = useState(isHiddenField(field));
+  const [localized, setLocalized] = useState(field.localized);
   const [targetModelSlugs, setTargetModelSlugs] = useState(field.targetModels.map((model) => model.slug));
   const [isList, setIsList] = useState(field.isList);
   const [uniqueSlug, setUniqueSlug] = useState(field.config.unique === true);
@@ -375,6 +382,9 @@ function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onS
         <FieldToggle checked={required} onCheckedChange={setRequired} title="Required field" description="Editors must provide a value before publishing." />
         <FieldToggle checked={isTitle} onCheckedChange={setIsTitle} title="Use as entry title" description="Show this value when identifying entries." />
         <HiddenFieldToggle checked={hidden} onCheckedChange={setHidden} />
+        {(localization.locales.length > 1 || field.localized) && isLocalizableFieldType(field.type) ? (
+          <TranslatableFieldToggle checked={localized} onCheckedChange={setLocalized} localization={localization} removesTranslations={field.localized && !localized} />
+        ) : null}
       </div>
       {field.type !== "component" ? <AdvancedConfig value={config} onChange={setConfig} rows={field.type === "enum" ? 4 : 8} /> : null}
       <div className="sticky bottom-0 -mx-4 mt-2 flex justify-end gap-2 border-t bg-popover px-4 py-4">
@@ -394,7 +404,7 @@ function EditFieldForm({ tenantSlug, field, models, modelId, isPending, run, onS
             nextConfig.options = serializeEnumOptions(enumOptions);
           }
           nextConfig = withEditorConfig(nextConfig, helpText, hidden);
-          await updateFieldAction(tenantSlug, modelId, field.id, { label, required, config: nextConfig, isTitle });
+          await updateFieldAction(tenantSlug, modelId, field.id, { label, required, config: nextConfig, isTitle, localized });
         }, "Field updated", onSaved)}><Save data-icon="inline-start" /> {isPending ? "Saving…" : "Save changes"}</Button>
       </div>
     </FieldGroup>
@@ -422,6 +432,14 @@ function HelpTextField({ id, value, onChange }: { id: string; value: string; onC
 
 function HiddenFieldToggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (checked: boolean) => void }) {
   return <FieldToggle checked={checked} onCheckedChange={onCheckedChange} title="Hide from editors" description="Move this field under “More fields” at the bottom of the entry form." />;
+}
+
+function TranslatableFieldToggle({ checked, onCheckedChange, localization, removesTranslations = false }: { checked: boolean; onCheckedChange: (checked: boolean) => void; localization: TenantLocalization; removesTranslations?: boolean }) {
+  const otherLocales = localization.locales.filter((locale) => locale !== localization.defaultLocale).map((locale) => localeLabel(locale));
+  const description = removesTranslations
+    ? "Saving deletes the translations already entered for this field."
+    : `Editors can also enter ${otherLocales.length ? otherLocales.join(", ") : "other languages"}. Missing translations fall back to the ${localeLabel(localization.defaultLocale)} value.`;
+  return <FieldToggle checked={checked} onCheckedChange={onCheckedChange} title="Translatable" description={description} />;
 }
 
 // Help text and visibility have their own controls, so they're kept out of the raw JSON editor.

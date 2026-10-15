@@ -1,3 +1,7 @@
+import type { EntryTranslations, TenantLocalization } from "@/modules/localization/locales";
+
+export type { EntryTranslations, TenantLocalization };
+
 export type TenantRole = "owner" | "editor";
 export type AppRole = "admin" | "user";
 export type ModelStatus = "active" | "archived";
@@ -90,6 +94,8 @@ export type ContentField = {
   targetModels: Array<Pick<ContentModel, "id" | "name" | "slug">>;
   isList: boolean;
   isTitle: boolean;
+  /** Has a separate value per tenant language. */
+  localized: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -100,6 +106,7 @@ export type ContentEntry = {
   modelId: string;
   status: EntryStatus;
   data: Record<string, unknown>;
+  translations: EntryTranslations;
   publishedAt: string | null;
   deletedAt: string | null;
   parentEntryId: string | null;
@@ -117,6 +124,7 @@ export type EntryRevision = {
   entryId: string;
   version: number;
   data: Record<string, unknown>;
+  translations: EntryTranslations;
   createdBy: string | null;
   createdAt: string;
 };
@@ -151,6 +159,7 @@ export type FieldInput = {
   required?: boolean;
   config?: Record<string, unknown>;
   isTitle?: boolean;
+  localized?: boolean;
 };
 
 export type WorkbenchView =
@@ -209,6 +218,7 @@ export type AssetSort = "date-desc" | "date-asc" | "name-asc" | "name-desc" | "t
 
 export type WorkbenchData = {
   me: CmsSessionView;
+  localization: TenantLocalization;
   models: ContentModel[];
   fields: ContentField[];
   entries: ContentEntry[];

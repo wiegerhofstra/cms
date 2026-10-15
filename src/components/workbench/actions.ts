@@ -32,6 +32,7 @@ import {
   updateManagedUser,
   updateModel,
 } from "@/lib/cms/workbench";
+import type { EntryTranslations } from "@/lib/cms/types";
 import { createAccessToken, revokeAccessToken, updateAccessToken } from "@/modules/access-tokens/service";
 import type { AccessTokenPermission } from "@/modules/access-tokens/permissions";
 
@@ -158,8 +159,8 @@ export async function deleteFieldAction(tenantSlug: string, modelId: string, fie
   return result;
 }
 
-export async function createEntryAction(tenantSlug: string, modelId: string, data: Record<string, unknown>) {
-  const result = await createEntry(modelId, data, tenantSlug);
+export async function createEntryAction(tenantSlug: string, modelId: string, data: Record<string, unknown>, translations?: EntryTranslations) {
+  const result = await createEntry(modelId, data, translations, tenantSlug);
   refresh();
   return result;
 }
@@ -169,8 +170,8 @@ export async function searchEntriesAction(tenantSlug: string, modelId: string, q
   return result.entries;
 }
 
-export async function updateEntryAction(tenantSlug: string, entryId: string, data: Record<string, unknown>) {
-  const result = await updateEntry(entryId, data, tenantSlug);
+export async function updateEntryAction(tenantSlug: string, entryId: string, data: Record<string, unknown>, translations?: EntryTranslations) {
+  const result = await updateEntry(entryId, data, translations, tenantSlug);
   refresh();
   return result;
 }

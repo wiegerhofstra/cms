@@ -32,7 +32,7 @@ import { titleValue } from "@/components/workbench/utils";
 import { getEnv } from "@/lib/env";
 import { deleteS3Object, presignRead, presignUpload } from "@/lib/storage/s3";
 import { setActiveTenantId } from "@/lib/tenant/active-tenant";
-import { createEntryRevision, getActiveModel, getTenantEntry, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
+import { createEntryRevision, getActiveModel, getTenantEntry, sanitizeEntryTranslations, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
 import { referencedAssetIds } from "@/modules/entries/assets";
 import { childEntrySchema, entryDataSchema, entryStatusSchema, reorderChildrenSchema, updateEntrySchema } from "@/modules/entries/validation";
 import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields";
@@ -42,6 +42,8 @@ import { completeUploadSchema, presignUploadSchema, sanitizeFilename, assertAllo
 import { createUploadToken, parseUploadToken } from "@/modules/uploads/token";
 import { listAccessTokensForContext } from "@/modules/access-tokens/service";
 import { getRevalidationStatus } from "@/modules/revalidation/service";
+import { defaultLocalization } from "@/modules/localization/locales";
+import { getTenantLocalization } from "@/modules/localization/tenant";
 
 const createTenantSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -163,12 +165,13 @@ export async function getWorkbenchData(input: LoadWorkbenchDataInput = {}): Prom
     activeTenantId: context.activeTenantId,
   };
   const view = input.view ?? "dashboard";
-  const [modelRows, assetResults] = await Promise.all([
+  const [modelRows, assetResults, localization] = await Promise.all([
     listModelsForContext(tenantContext),
     listAssetsForContext(
       tenantContext,
       view === "assets" ? { query: assetQuery, sort: assetSort, page: assetPage, pageSize: assetPageSize } : undefined,
     ),
+    getTenantLocalization(db, tenantContext.activeTenantId),
   ]);
   let models = modelRows;
   let entry: ContentEntry | null = null;
@@ -197,7 +200,9 @@ export async function getWorkbenchData(input: LoadWorkbenchDataInput = {}): Prom
   const componentReferences = shouldLoadModel ? await listComponentReferencesForContext(tenantContext, fields) : [];
   if (entry && view === "entry-detail") {
     const loadedIds = new Set(assetResults.assets.map((asset) => asset.id));
-    const missingIds = referencedAssetIds(fields, entry.data).filter((id) => !loadedIds.has(id));
+    const missingIds = [entry.data, ...Object.values(entry.translations)]
+      .flatMap((data) => referencedAssetIds(fields, data))
+      .filter((id) => !loadedIds.has(id));
     if (missingIds.length) {
       const referenced = await db.select().from(assets).where(and(
         eq(assets.tenantId, tenantContext.activeTenantId), inArray(assets.id, missingIds),
@@ -209,6 +214,7 @@ export async function getWorkbenchData(input: LoadWorkbenchDataInput = {}): Prom
 
   return {
     me,
+    localization,
     models,
     fields,
     entries,
@@ -753,6 +759,7 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
     required: data.required ?? currentField.required,
     config: data.config ?? currentField.config,
     isTitle: data.isTitle ?? currentField.isTitle,
+    localized: data.localized ?? currentField.localized,
   };
   const normalizedField = await normalizeFieldInput(db, context.activeTenantId, mergedInput);
 
@@ -786,6 +793,9 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
       await tx.delete(contentModelFieldTargets).where(eq(contentModelFieldTargets.fieldId, fieldId));
       if (targetModelIds.length) {
         await tx.insert(contentModelFieldTargets).values(targetModelIds.map((targetModelId) => ({ fieldId, targetModelId })));
+      }
+      if (currentField.localized && !normalizedField.localized) {
+        await removeFieldTranslations(tx, context.activeTenantId, modelId, currentField.key);
       }
       return updatedField;
     });
@@ -822,7 +832,10 @@ export async function deleteField(modelId: string, fieldId: string, tenantSlug?:
     .limit(1);
   if (entryWithFieldData) throw new ApiError("CONFLICT", "Field cannot be removed because entry data exists");
 
-  await db.delete(contentModelFields).where(and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.modelId, modelId), eq(contentModelFields.id, fieldId)));
+  await db.transaction(async (tx) => {
+    await tx.delete(contentModelFields).where(and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.modelId, modelId), eq(contentModelFields.id, fieldId)));
+    await removeFieldTranslations(tx, context.activeTenantId, modelId, field.key);
+  });
   return { deleted: true as const };
 }
 
@@ -832,21 +845,22 @@ export async function listEntries(modelId: string, query = "", tenantSlug?: stri
   return { entries: await listEntriesForContext(context, modelId, query), nextCursor: null };
 }
 
-export async function createEntry(modelId: string, input: unknown, tenantSlug?: string) {
+export async function createEntry(modelId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string) {
   const [context, data] = await Promise.all([
     requireTenantContext(crypto.randomUUID(), tenantSlug),
-    Promise.resolve(parseInput(entryDataSchema, { data: input })),
+    Promise.resolve(parseInput(entryDataSchema, { data: input, translations: translationsInput })),
   ]);
   await getActiveModel(db, context.activeTenantId, modelId);
-  await validateEntryData(db, context.activeTenantId, modelId, data.data);
+  const translations = await sanitizeEntryTranslations(db, context.activeTenantId, modelId, data.translations);
+  await validateEntryData(db, context.activeTenantId, modelId, data.data, undefined, translations);
 
   const entry = await db.transaction(async (tx) => {
     const [createdEntry] = await tx
       .insert(contentEntries)
-      .values({ tenantId: context.activeTenantId, modelId, data: data.data, createdBy: context.user.id, updatedBy: context.user.id })
+      .values({ tenantId: context.activeTenantId, modelId, data: data.data, translations, createdBy: context.user.id, updatedBy: context.user.id })
       .returning();
     if (!createdEntry) throw new ApiError("INTERNAL_SERVER_ERROR", "Entry could not be created");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, userId: context.user.id });
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, translations: createdEntry.translations, userId: context.user.id });
     return createdEntry;
   });
 
@@ -858,28 +872,29 @@ export async function getEntry(entryId: string, tenantSlug?: string) {
   return getEntryForContext(context, entryId);
 }
 
-export async function updateEntry(entryId: string, input: unknown, tenantSlug?: string) {
+export async function updateEntry(entryId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string) {
   const [context, data] = await Promise.all([
     requireTenantContext(crypto.randomUUID(), tenantSlug),
-    Promise.resolve(parseInput(updateEntrySchema, { data: input })),
+    Promise.resolve(parseInput(updateEntrySchema, { data: input, translations: translationsInput })),
   ]);
   const currentEntry = await getTenantEntry(db, context.activeTenantId, entryId);
   if (!currentEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
   await getActiveModel(db, context.activeTenantId, currentEntry.modelId);
+  const translations = await sanitizeEntryTranslations(db, context.activeTenantId, currentEntry.modelId, data.translations ?? currentEntry.translations);
   if (currentEntry.status === "published") {
-    await validateEntryDataForPublish(db, context.activeTenantId, currentEntry.modelId, data.data, entryId);
+    await validateEntryDataForPublish(db, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
   } else {
-    await validateEntryData(db, context.activeTenantId, currentEntry.modelId, data.data, entryId);
+    await validateEntryData(db, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
   }
 
   const entry = await db.transaction(async (tx) => {
     const [updatedEntry] = await tx
       .update(contentEntries)
-      .set({ data: data.data, updatedBy: context.user.id, updatedAt: new Date() })
+      .set({ data: data.data, translations, updatedBy: context.user.id, updatedAt: new Date() })
       .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), eq(contentEntries.status, currentEntry.status), sql`${contentEntries.deletedAt} is null`))
       .returning();
     if (!updatedEntry) throw new ApiError("CONFLICT", "Entry status changed while it was being updated");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: updatedEntry.id, data: updatedEntry.data, userId: context.user.id });
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: updatedEntry.id, data: updatedEntry.data, translations: updatedEntry.translations, userId: context.user.id });
     return updatedEntry;
   });
 
@@ -898,7 +913,7 @@ export async function deleteEntry(entryId: string, tenantSlug?: string) {
       .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), sql`${contentEntries.deletedAt} is null`))
       .returning();
     if (!deletedEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: deletedEntry.id, data: deletedEntry.data, userId: context.user.id });
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: deletedEntry.id, data: deletedEntry.data, translations: deletedEntry.translations, userId: context.user.id });
   });
 
   return { deleted: true as const };
@@ -914,7 +929,7 @@ export async function publishEntry(entryId: string, tenantSlug?: string) {
       .for("update")
       .limit(1);
     if (!currentEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
-    await validateEntryDataForPublish(tx, context.activeTenantId, currentEntry.modelId, currentEntry.data, currentEntry.id);
+    await validateEntryDataForPublish(tx, context.activeTenantId, currentEntry.modelId, currentEntry.data, currentEntry.id, currentEntry.translations);
 
     const [publishedEntry] = await tx
       .update(contentEntries)
@@ -922,7 +937,7 @@ export async function publishEntry(entryId: string, tenantSlug?: string) {
       .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), sql`${contentEntries.deletedAt} is null`))
       .returning();
     if (!publishedEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: publishedEntry.id, data: publishedEntry.data, userId: context.user.id });
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: publishedEntry.id, data: publishedEntry.data, translations: publishedEntry.translations, userId: context.user.id });
     return publishedEntry;
   });
   return { entry: serializeEntry(entry) };
@@ -937,7 +952,7 @@ export async function unpublishEntry(entryId: string, tenantSlug?: string) {
       .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), sql`${contentEntries.deletedAt} is null`))
       .returning();
     if (!unpublishedEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: unpublishedEntry.id, data: unpublishedEntry.data, userId: context.user.id });
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: unpublishedEntry.id, data: unpublishedEntry.data, translations: unpublishedEntry.translations, userId: context.user.id });
     return unpublishedEntry;
   });
   return { entry: serializeEntry(entry) };
@@ -988,7 +1003,7 @@ export async function createChild(entryId: string, input: unknown, tenantSlug?: 
         .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, data.childEntryId), eq(contentEntries.modelId, targetModelId), sql`${contentEntries.deletedAt} is null`))
         .returning();
       if (!linkedEntry) throw new ApiError("NOT_FOUND", "Child entry was not found");
-      await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: linkedEntry.id, data: linkedEntry.data, userId: context.user.id });
+      await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: linkedEntry.id, data: linkedEntry.data, translations: linkedEntry.translations, userId: context.user.id });
       return linkedEntry;
     }
 
@@ -997,7 +1012,7 @@ export async function createChild(entryId: string, input: unknown, tenantSlug?: 
       .values({ tenantId: context.activeTenantId, modelId: targetModelId, data: data.data, parentEntryId: parentEntry.id, parentFieldId: field.id, position, createdBy: context.user.id, updatedBy: context.user.id })
       .returning();
     if (!createdEntry) throw new ApiError("INTERNAL_SERVER_ERROR", "Child entry could not be created");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, userId: context.user.id });
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, translations: createdEntry.translations, userId: context.user.id });
     return createdEntry;
   });
 
@@ -1285,7 +1300,7 @@ async function getModelForContext(context: TenantContext, modelId: string): Prom
 
 async function listEntriesForContext(context: TenantContext, modelId: string, query = ""): Promise<ContentEntry[]> {
   const filters = [eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.modelId, modelId), sql`${contentEntries.deletedAt} is null`];
-  if (query) filters.push(ilike(sql`${contentEntries.data}::text`, `%${query}%`));
+  if (query) filters.push(or(ilike(sql`${contentEntries.data}::text`, `%${query}%`), ilike(sql`${contentEntries.translations}::text`, `%${query}%`))!);
 
   const rows = await db
     .select()
@@ -1333,9 +1348,24 @@ async function getEntryForContext(context: TenantContext, entryId: string) {
   return { entry: serializeEntry(entry), revisions: revisions.map(serializeRevision) };
 }
 
+/** Removes one field's values from every translation of a model's entries. */
+async function removeFieldTranslations(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], tenantId: string, modelId: string, key: string) {
+  await tx
+    .update(contentEntries)
+    .set({
+      translations: sql`coalesce((
+        select jsonb_object_agg(locale, locale_values - ${key}::text)
+        from jsonb_each(${contentEntries.translations}) as translation(locale, locale_values)
+        where locale_values - ${key}::text <> '{}'::jsonb
+      ), '{}'::jsonb)`,
+    })
+    .where(and(eq(contentEntries.tenantId, tenantId), eq(contentEntries.modelId, modelId), sql`${contentEntries.translations} <> '{}'::jsonb`));
+}
+
 function emptyWorkbenchData(me: CmsSessionView, query: string): WorkbenchData {
   return {
     me,
+    localization: defaultLocalization,
     models: [],
     fields: [],
     entries: [],

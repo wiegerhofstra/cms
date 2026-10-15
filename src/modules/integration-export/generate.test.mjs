@@ -16,13 +16,13 @@ const articleId = "11111111-1111-4111-8111-111111111111";
 const heroId = "22222222-2222-4222-8222-222222222222";
 const ctaId = "33333333-3333-4333-8333-333333333333";
 function field(key, type, extra = {}) {
-  return { key, type, label: key, required: true, isList: false, isTitle: false, config: {}, targetModelIds: [], ...extra };
+  return { key, type, label: key, required: true, isList: false, isTitle: false, localized: false, config: {}, targetModelIds: [], ...extra };
 }
 const fixture = {
-  tenant: { name: "Example café", slug: "example" }, origin: "https://cms.example.invalid",
+  tenant: { name: "Example café", slug: "example", defaultLocale: "en", locales: ["en", "nl"] }, origin: "https://cms.example.invalid",
   models: [
     { id: articleId, slug: "article", name: "Article", status: "active", fields: [
-      ...["text", "number", "boolean", "date", "time", "url", "slug", "rich_text", "asset"].map((type) => field(type, type)),
+      ...["text", "number", "boolean", "date", "time", "url", "slug", "rich_text", "asset"].map((type) => field(type, type, type === "text" ? { localized: true } : {})),
       field("enum", "enum", { config: { options: ["one", 2, { value: "three", label: "Three" }] } }),
       field("sections", "component", { isList: true, targetModelIds: [heroId, ctaId] }),
       field("hero", "component", { targetModelIds: [heroId] }),
@@ -212,5 +212,25 @@ test("client surfaces API errors and malformed responses, rejects invalid limits
     } });
     await assert.rejects(async () => { for await (const entry of repeated.iterateEntries("article")) void entry; }, /repeated/);
     assert.equal(calls, 2);
+  });
+});
+
+test("languages are exported: locale parameter, localized fields, locale-aware client", async () => {
+  const spec = JSON.parse(files["openapi.json"]);
+  const entriesOp = spec.paths["/api/content/{tenantSlug}/models/{modelSlug}/entries"].get;
+  assert.deepEqual(entriesOp.parameters.find((parameter) => parameter.name === "locale").schema, { type: "string", enum: ["en", "nl"], default: "en" });
+  const properties = schema.$defs.Entry_11111111111141118111111111111111.allOf[1].properties.data.properties;
+  assert.equal(properties.text["x-cms-localized"], true);
+  assert.equal(properties.number["x-cms-localized"], false);
+  assert.match(files["INTEGRATION.md"], /Default: "en"/);
+  assert.match(files["types.ts"], /localized: boolean/);
+  await withClient(async ({ createCmsClient }) => {
+    const requests = [];
+    const client = createCmsClient({ origin: fixture.origin, tenantSlug: "example", token: "test-token", fetch: async (url) => {
+      requests.push(url); return Response.json(requests.length === 1 ? examples.byModel.article.compact : examples.byModel.article.expanded);
+    } });
+    await client.listEntries("article", { locale: "nl" });
+    await client.getEntry("article", articleId, { locale: "nl" });
+    assert.deepEqual(requests.map((url) => url.searchParams.get("locale")), ["nl", "nl"]);
   });
 });

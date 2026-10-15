@@ -24,7 +24,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ContentField, ContentModel, FieldInput, ModelKind } from "@/lib/cms/types";
+import type { ContentField, ContentModel, FieldInput, ModelKind, TenantLocalization } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { archiveModelAction, createModelAction, deleteModelAction, updateModelAction } from "./actions";
 import { FieldEditor, FieldTable } from "./model-fields";
@@ -35,6 +35,7 @@ export function ModelsPanel(props: {
   activeModel: ContentModel | null;
   activeModelId: string;
   fields: ContentField[];
+  localization: TenantLocalization;
   hasActiveModelEntries: boolean;
 }) {
   const router = useRouter();
@@ -161,9 +162,9 @@ export function ModelsPanel(props: {
                   <h2 id="model-fields-heading" className="font-medium">Fields</h2>
                   <p className="mt-1 text-sm text-muted-foreground">Use the arrows to change field order. Changes save automatically and apply to entry forms.</p>
                 </div>
-                <FieldEditor tenantSlug={props.tenantSlug} models={props.models} modelId={props.activeModelId} />
+                <FieldEditor tenantSlug={props.tenantSlug} models={props.models} modelId={props.activeModelId} localization={props.localization} />
               </div>
-              <FieldTable tenantSlug={props.tenantSlug} fields={props.fields} models={props.models} modelId={props.activeModelId} />
+              <FieldTable tenantSlug={props.tenantSlug} fields={props.fields} models={props.models} modelId={props.activeModelId} localization={props.localization} />
             </section>
 
             <section aria-labelledby="danger-zone-heading" className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">

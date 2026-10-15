@@ -7,6 +7,8 @@ import { db } from "@/db";
 import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
 import { presignRead } from "@/lib/storage/s3";
+import { canonicalLocale, localizeEntryData, type TenantLocalization } from "@/modules/localization/locales";
+import { getTenantLocalization } from "@/modules/localization/tenant";
 import { createRichTextAssetResolver } from "./rich-text";
 
 type EntryRow = typeof contentEntries.$inferSelect;
@@ -15,14 +17,17 @@ const maxComponentReferences = 500;
 const maxResolvedAssets = 200;
 
 export async function listDeliveryModels(tenantId: string) {
-  const rows = await db
-    .select()
-    .from(contentModels)
-    .where(eq(contentModels.tenantId, tenantId))
-    .orderBy(contentModels.name)
-    .limit(100);
+  const [rows, localization] = await Promise.all([
+    db
+      .select()
+      .from(contentModels)
+      .where(eq(contentModels.tenantId, tenantId))
+      .orderBy(contentModels.name)
+      .limit(100),
+    getTenantLocalization(db, tenantId),
+  ]);
 
-  return rows.map(serializeModel);
+  return { models: rows.map(serializeModel), localization };
 }
 
 export async function getDeliveryModel(tenantId: string, modelSlug: string) {
@@ -41,6 +46,7 @@ export async function getDeliveryModel(tenantId: string, modelSlug: string) {
       config: field.config,
       isList: field.isList,
       isTitle: field.isTitle,
+      localized: field.localized,
       targetModelIds: field.targetModelIds,
     })),
   };
@@ -52,8 +58,9 @@ export async function listPublishedEntries(input: {
   limit: number;
   cursor: string | null;
   maxDepth: number;
+  locale: string | null;
 }) {
-  const model = await getModelBySlug(input.tenantId, input.modelSlug);
+  const [model, locale] = await Promise.all([getModelBySlug(input.tenantId, input.modelSlug), resolveDeliveryLocale(input.tenantId, input.locale)]);
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
   const filters = [
     eq(contentEntries.tenantId, input.tenantId),
@@ -76,9 +83,10 @@ export async function listPublishedEntries(input: {
     .limit(input.limit + 1);
   const hasNextPage = rows.length > input.limit;
   const pageRows = rows.slice(0, input.limit);
-  const resolver = createEntryResolver(input.tenantId, input.maxDepth);
+  const resolver = createEntryResolver(input.tenantId, input.maxDepth, locale);
 
   return {
+    locale: locale.locale,
     entries: await Promise.all(pageRows.map((entry) => resolver.resolve(entry, 1, new Set()))),
     nextCursor: hasNextPage && pageRows.length ? encodeCursor(pageRows[pageRows.length - 1]!.cursorCreatedAt, pageRows[pageRows.length - 1]!.id) : null,
   };
@@ -89,8 +97,9 @@ export async function getPublishedEntry(input: {
   modelSlug: string;
   entryId: string;
   maxDepth: number;
+  locale: string | null;
 }) {
-  const model = await getModelBySlug(input.tenantId, input.modelSlug);
+  const [model, locale] = await Promise.all([getModelBySlug(input.tenantId, input.modelSlug), resolveDeliveryLocale(input.tenantId, input.locale)]);
   const entryId = z.uuid().safeParse(input.entryId);
   if (!entryId.success) throw new CmsError("BAD_REQUEST", "entryId must be a UUID");
   const [entry] = await db
@@ -108,7 +117,10 @@ export async function getPublishedEntry(input: {
     .limit(1);
   if (!entry) throw new CmsError("NOT_FOUND", "Published entry was not found");
 
-  return createEntryResolver(input.tenantId, input.maxDepth).resolve(entry, 1, new Set());
+  return {
+    locale: locale.locale,
+    entry: await createEntryResolver(input.tenantId, input.maxDepth, locale).resolve(entry, 1, new Set()),
+  };
 }
 
 export function parseDeliveryQuery(url: string, includePagination: boolean) {
@@ -116,10 +128,24 @@ export function parseDeliveryQuery(url: string, includePagination: boolean) {
   const maxDepth = parseBoundedInteger(searchParams.get("maxDepth"), 1, 1, 5, "maxDepth");
   const limit = includePagination ? parseBoundedInteger(searchParams.get("limit"), 20, 1, 100, "limit") : 1;
 
-  return { maxDepth, limit, cursor: includePagination ? searchParams.get("cursor") : null };
+  return { maxDepth, limit, cursor: includePagination ? searchParams.get("cursor") : null, locale: searchParams.get("locale") };
 }
 
-function createEntryResolver(tenantId: string, maxDepth: number) {
+type DeliveryLocale = { locale: string; localization: TenantLocalization };
+
+/** The requested locale, or the tenant's default when none is given. Unknown locales are rejected instead of silently falling back. */
+async function resolveDeliveryLocale(tenantId: string, requested: string | null): Promise<DeliveryLocale> {
+  const localization = await getTenantLocalization(db, tenantId);
+  if (!requested) return { locale: localization.defaultLocale, localization };
+
+  const locale = canonicalLocale(requested);
+  if (!locale || !localization.locales.includes(locale)) {
+    throw new CmsError("BAD_REQUEST", `locale must be one of: ${localization.locales.join(", ")}`);
+  }
+  return { locale, localization };
+}
+
+function createEntryResolver(tenantId: string, maxDepth: number, { locale, localization }: DeliveryLocale) {
   const fieldsByModel = new Map<string, Promise<FieldRow[]>>();
   const entriesById = new Map<string, Promise<EntryRow | null>>();
   const assetsById = new Map<string, Promise<unknown>>();
@@ -190,9 +216,10 @@ function createEntryResolver(tenantId: string, maxDepth: number) {
     const entryFields = await fields(entry.modelId);
     const fieldByKey = new Map(entryFields.map((field) => [field.key, field]));
     const nextAncestors = new Set(ancestors).add(entry.id);
+    const data = localizeEntryData(entryFields, entry.data, entry.translations, locale, localization);
     const resolvedData = Object.fromEntries(
       await Promise.all(
-        Object.entries(entry.data).map(async ([key, value]) => {
+        Object.entries(data).map(async ([key, value]) => {
           const field = fieldByKey.get(key);
           if (field?.type === "asset") {
             return [key, typeof value === "string" ? await deliveryAsset(value) : null] as const;

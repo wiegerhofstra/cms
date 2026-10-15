@@ -10,6 +10,7 @@ export type ExportField = {
   required: boolean;
   isList: boolean;
   isTitle: boolean;
+  localized: boolean;
   config: Record<string, unknown>;
   targetModelIds: string[];
 };
@@ -20,7 +21,7 @@ export type ExportModel = {
   status: "active" | "archived";
   fields: ExportField[];
 };
-export type ExportInput = { tenant: { name: string; slug: string }; origin: string; models: ExportModel[] };
+export type ExportInput = { tenant: { name: string; slug: string; defaultLocale: string; locales: string[] }; origin: string; models: ExportModel[] };
 type Schema = Record<string, unknown>;
 const formatVersion = "1.0.0";
 const ref = (name: string): Schema => ({ $ref: `#/$defs/${name}` });
@@ -80,6 +81,7 @@ function deliveryFieldSchema(field: ExportField, models: ExportModel[]): Schema 
     "x-cms-requiredForPublish": field.required,
     "x-cms-isTitle": field.isTitle,
     "x-cms-isList": field.isList,
+    "x-cms-localized": field.localized,
     "x-cms-config": field.config,
     "x-cms-targetModels": models.filter((model) => field.targetModelIds.includes(model.id)).map(({ id, slug }) => ({ id, slug })),
     ...(field.type !== "asset" && field.type !== "component" ? {
@@ -114,7 +116,7 @@ function commonDefinitions(): Record<string, Schema> {
       id: uuid, key: string, label: string,
       type: { type: "string", enum: ["text", "rich_text", "url", "number", "boolean", "date", "time", "enum", "asset", "component", "slug"] },
       required: { type: "boolean" }, position: { type: "integer" }, config: { type: "object" },
-      isList: { type: "boolean" }, isTitle: { type: "boolean" }, targetModelIds: array(uuid),
+      isList: { type: "boolean" }, isTitle: { type: "boolean" }, localized: { type: "boolean" }, targetModelIds: array(uuid),
     }),
     ModelDetail: { allOf: [ref("Model"), object({ fields: array(ref("Field")) })] },
     Error: object({ error: object({
@@ -159,11 +161,11 @@ export function generateIntegrationFiles(input: ExportInput): Record<string, str
     "INTEGRATION.md": integrationGuide(input.tenant, origin, models, schemaHash),
     "manifest.json": json({ ...snapshot, schemaHash, generatedAt: new Date().toISOString(), origin, examplesAreSynthetic: true }),
     "models.schema.json": json(schema),
-    "openapi.json": json(openApi(input.tenant.slug, origin, definitions, entrySchema, schemaHash)),
+    "openapi.json": json(openApi(input.tenant, origin, definitions, entrySchema, schemaHash)),
     "types.ts": generateTypes(models),
     "client.ts": clientSource,
-    "examples/usage.ts": usageExample(input.tenant.slug, origin, models),
-    "examples/responses.json": json(exampleResponses(models)),
+    "examples/usage.ts": usageExample(input.tenant, origin, models),
+    "examples/responses.json": json(exampleResponses(models, input.tenant.defaultLocale)),
   };
 }
 
@@ -173,11 +175,13 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function openApi(tenantSlug: string, origin: string, definitions: Record<string, Schema>, entrySchema: Schema, schemaHash: string) {
+function openApi(tenantInfo: ExportInput["tenant"], origin: string, definitions: Record<string, Schema>, entrySchema: Schema, schemaHash: string) {
   const param = (name: string, location: "path" | "query", schema: Schema, description: string) => ({
     name, in: location, required: location === "path", schema, description,
   });
-  const tenant = param("tenantSlug", "path", { type: "string", example: tenantSlug }, "Must match the tenant associated with the bearer token.");
+  const tenant = param("tenantSlug", "path", { type: "string", example: tenantInfo.slug }, "Must match the tenant associated with the bearer token.");
+  const locale = param("locale", "query", { type: "string", enum: tenantInfo.locales, default: tenantInfo.defaultLocale }, "Language for translatable fields (x-cms-localized). A field without a translation in this language returns the default-language value. Unknown languages return 400.");
+  const localeMeta = { type: "string", description: "Language the entries were resolved in." };
   const model = param("modelSlug", "path", string, "A model slug from model discovery or manifest.json.");
   const depth = param("maxDepth", "query", { type: "integer", minimum: 1, maximum: 5, default: 1 }, "Root counts as depth 1; depth-limited and cyclic components remain compact references.");
   const headers = {
@@ -204,17 +208,17 @@ function openApi(tenantSlug: string, origin: string, definitions: Record<string,
   const path = "/api/content/{tenantSlug}/models";
   return replaceRefs({
     openapi: "3.1.0",
-    info: { title: "CMS Content API", version: formatVersion, description: "Read-only content delivery. This schema snapshot describes one tenant. Unsupported: writes, draft preview, search, filters, custom sorting, and entry lookup by slug. Primitive fields pass through stored JSON; x-cms-editorSchema describes expected editor values, not delivery validation." },
+    info: { title: "CMS Content API", version: formatVersion, description: "Read-only content delivery. This schema snapshot describes one tenant. Unsupported: writes, draft preview, search, filters, custom sorting, and entry lookup by slug. Translatable fields resolve per ?locale= with fallback to the default language. Primitive fields pass through stored JSON; x-cms-editorSchema describes expected editor values, not delivery validation." },
     "x-cms-schemaHash": schemaHash,
     servers: [{ url: origin }],
     paths: {
-      [path]: { get: operation("listModels", "List content models", [tenant], object({ data: array(ref("Model")) }), "At most 100 models ordered by name, including archived models. No model pagination. manifest.json contains the full export snapshot.") },
+      [path]: { get: operation("listModels", "List content models", [tenant], object({ data: array(ref("Model")), meta: object({ defaultLocale: string, locales: array(string) }) }, ["data"]), "At most 100 models ordered by name, including archived models. No model pagination. manifest.json contains the full export snapshot. meta lists the tenant's languages.") },
       [`${path}/{modelSlug}`]: { get: operation("getModel", "Get a model and its fields", [tenant, model], object({ data: ref("ModelDetail") }), "Fields ordered by position. targetModelIds identifies allowed component models; map IDs to slugs using manifest.json.") },
       [`${path}/{modelSlug}/entries`]: { get: operation("listEntries", "List published top-level entries", [tenant, model,
         param("limit", "query", { type: "integer", minimum: 1, maximum: 100, default: 20 }, "Maximum entries per page."),
-        param("cursor", "query", string, "Pass meta.nextCursor unchanged; stop when null."), depth,
-      ], object({ data: array(entrySchema), meta: object({ nextCursor: nullable(string), maxDepth: { type: "integer" } }) }), "Published, non-deleted root entries ordered by createdAt descending, then id descending. No snapshot guarantee across pages. Expansion budgets: 500 component references, 200 unique assets; rich text traversal budget 2,000 visited values and nesting depth 100. Exceeding a budget returns 400; lower limit or maxDepth, or simplify the document.") },
-      [`${path}/{modelSlug}/entries/{entryId}`]: { get: operation("getEntry", "Get one published entry", [tenant, model, param("entryId", "path", uuid, "UUID of the entry. Published child entries can be fetched directly."), depth], object({ data: entrySchema, meta: object({ maxDepth: { type: "integer" } }) }), "Returns a published, non-deleted entry belonging to this model. The same expansion limits as listEntries apply.") },
+        param("cursor", "query", string, "Pass meta.nextCursor unchanged; stop when null."), depth, locale,
+      ], object({ data: array(entrySchema), meta: object({ nextCursor: nullable(string), maxDepth: { type: "integer" }, locale: localeMeta }, ["nextCursor", "maxDepth"]) }), "Published, non-deleted root entries ordered by createdAt descending, then id descending. No snapshot guarantee across pages. Expansion budgets: 500 component references, 200 unique assets; rich text traversal budget 2,000 visited values and nesting depth 100. Exceeding a budget returns 400; lower limit or maxDepth, or simplify the document.") },
+      [`${path}/{modelSlug}/entries/{entryId}`]: { get: operation("getEntry", "Get one published entry", [tenant, model, param("entryId", "path", uuid, "UUID of the entry. Published child entries can be fetched directly."), depth, locale], object({ data: entrySchema, meta: object({ maxDepth: { type: "integer" }, locale: localeMeta }, ["maxDepth"]) }), "Returns a published, non-deleted entry belonging to this model. The same expansion limits as listEntries apply.") },
     },
     components: { securitySchemes: { contentToken: { type: "http", scheme: "bearer", description: "Authorization: Bearer cms_at_<secret>. Use only from a trusted server." } }, schemas: definitions },
   });
@@ -264,7 +268,7 @@ export type RichTextNode = {
 export type Model = { id: string; name: string; slug: string; status: "active" | "archived"; createdAt: string; updatedAt: string };
 export type Field = {
   id: string; key: string; label: string; type: ${["text", "rich_text", "url", "number", "boolean", "date", "time", "enum", "asset", "component", "slug"].map((type) => JSON.stringify(type)).join(" | ")};
-  required: boolean; position: number; config: Record<string, unknown>; isList: boolean; isTitle: boolean; targetModelIds: string[];
+  required: boolean; position: number; config: Record<string, unknown>; isList: boolean; isTitle: boolean; localized: boolean; targetModelIds: string[];
 };
 export type ModelDetail = Model & { fields: Field[] };
 export type EntryByModel = {
@@ -306,10 +310,10 @@ Schema SHA-256: ${hash}
 Base path: /api/content/{tenantSlug}/models
 Send Authorization: Bearer cms_at_<secret> on each GET. A valid token for another tenant returns 403. Missing, invalid, expired or revoked tokens return 401. Keep secrets out of URLs and logs.
 
-- GET /models: { data: Model[] }; at most 100 models, name order, including archived models, no pagination.
+- GET /models: { data: Model[], meta: { defaultLocale, locales } }; at most 100 models, name order, including archived models, no pagination.
 - GET /models/{modelSlug}: { data: ModelDetail }; fields in position order.
-- GET /models/{modelSlug}/entries: { data: Entry[], meta: { nextCursor, maxDepth } }.
-- GET /models/{modelSlug}/entries/{entryId}: { data: Entry, meta: { maxDepth } }; entryId is a UUID, not a slug.
+- GET /models/{modelSlug}/entries: { data: Entry[], meta: { nextCursor, maxDepth, locale } }.
+- GET /models/{modelSlug}/entries/{entryId}: { data: Entry, meta: { maxDepth, locale } }; entryId is a UUID, not a slug.
 
 Paths above are relative to /api/content/{tenantSlug}. Encode path segments and query values. Only GET is application-defined; framework-generated HEAD/OPTIONS/405 responses can have a different body.
 Every application GET response has Cache-Control: private, no-store and X-Request-Id. Errors are { error: { code, message, requestId } }. Codes: BAD_REQUEST (400), UNAUTHORIZED (401), FORBIDDEN (403), NOT_FOUND (404), INTERNAL_SERVER_ERROR (500). A 401 includes WWW-Authenticate: Bearer. Do not blindly retry 400/401/403/404; report the request ID. Network failures and 500s may be retried with a bounded backoff.
@@ -319,6 +323,11 @@ Every application GET response has Cache-Control: private, no-store and X-Reques
 limit defaults to 20, range 1–100. Pass meta.nextCursor unchanged until it is null; do not construct or decode cursors. Keep model, limit and maxDepth stable while paging. Sort order is createdAt descending, then id descending. Concurrent publishing/editing is not a snapshot across pages.
 
 Only published, non-deleted entries are delivered. Collections exclude child entries; a published child is accessible by model slug and UUID. There is no write API, draft preview, search, field filtering, custom sorting or entry lookup by slug. Do not invent query parameters for these features. If needed, paginate and filter server-side; account for the cost.
+
+## Languages
+
+Languages: ${tenant.locales.map((locale) => JSON.stringify(locale)).join(", ")}. Default: ${JSON.stringify(tenant.defaultLocale)}.
+Pass ?locale=<code> to listEntries and getEntry (client option: locale). Without it, the default language is used. A language that is not configured returns 400. Fields with localized=true return the translation for that language; when it has no translation, the default-language value is returned instead. Other fields are the same in every language. Nested components resolve in the same language. Keep locale stable while paging. Language codes are BCP 47 tags; the list can change, so read GET /models meta instead of hard-coding it.
 
 ## Field guarantees versus editor intent
 
@@ -378,7 +387,7 @@ function syntheticId(seed: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-function exampleResponses(models: ExportModel[]) {
+function exampleResponses(models: ExportModel[], locale: string) {
   const asset = { id: syntheticId("asset"), originalName: "example.jpg", mimeType: "image/jpeg", sizeBytes: 1024, imageWidth: 800, imageHeight: 600, url: "https://example.invalid/synthetic-image.jpg" };
   const node = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Synthetic example text", marks: [{ type: "bold" }] }] }, { type: "asset", attrs: { assetId: asset.id, asset } }] };
   const entry = (model: ExportModel) => ({
@@ -411,18 +420,18 @@ function exampleResponses(models: ExportModel[]) {
   return {
     note: "Synthetic fixtures only. Each byModel item is a separate endpoint response, not a cross-model collection.",
     byModel: Object.fromEntries(models.map((model, index) => [model.slug, {
-      compact: { data: [entries[index]], meta: { nextCursor: null, maxDepth: 1 } },
-      expanded: { data: expanded[index], meta: { maxDepth: 2 } },
-      missingFields: { data: { ...entries[index], data: {} }, meta: { maxDepth: 1 } },
-      unavailableRelations: { data: { ...entries[index], data: Object.fromEntries(model.fields.filter((field) => field.type === "asset" || field.type === "component").map((field) => [field.key, field.type === "component" && field.isList ? [] : null])) }, meta: { maxDepth: 1 } },
+      compact: { data: [entries[index]], meta: { nextCursor: null, maxDepth: 1, locale } },
+      expanded: { data: expanded[index], meta: { maxDepth: 2, locale } },
+      missingFields: { data: { ...entries[index], data: {} }, meta: { maxDepth: 1, locale } },
+      unavailableRelations: { data: { ...entries[index], data: Object.fromEntries(model.fields.filter((field) => field.type === "asset" || field.type === "component").map((field) => [field.key, field.type === "component" && field.isList ? [] : null])) }, meta: { maxDepth: 1, locale } },
     }])),
-    empty: { data: [], meta: { nextCursor: null, maxDepth: 1 } },
+    empty: { data: [], meta: { nextCursor: null, maxDepth: 1, locale } },
     missingRichTextAsset: { type: "asset", attrs: { assetId: syntheticId("missing"), asset: null } },
     error: { error: { code: "NOT_FOUND", message: "Published entry was not found", requestId: "synthetic-request-id" } },
   };
 }
 
-function usageExample(tenantSlug: string, origin: string, models: ExportModel[]): string {
+function usageExample({ slug: tenantSlug, locales }: ExportInput["tenant"], origin: string, models: ExportModel[]): string {
   const first = models[0];
   return `// Run on the server. Set CMS_ACCESS_TOKEN in your server environment.
 import { createCmsClient } from "../client";
@@ -440,7 +449,8 @@ export async function loadExample(entryId: string) {
   if (!modelSlug) return { models, entries: [] };
   const model = await cms.getModel(modelSlug);
   const page = await cms.listEntries(modelSlug, { limit: 20, maxDepth: 2 });
-  const detail = await cms.getEntry(modelSlug, entryId, { maxDepth: 2 });
+  // locale selects translations; untranslated fields return the default-language value.
+  const detail = await cms.getEntry(modelSlug, entryId, { maxDepth: 2, locale: ${JSON.stringify(locales.at(-1) ?? "en")} });
   for await (const entry of cms.iterateEntries(modelSlug, { limit: 20, maxDepth: 2 })) {
     // Validate fields before rendering. Do not assume every model has a title field.
     for (const field of model.data.fields) {
@@ -465,8 +475,8 @@ export async function loadExample(entryId: string) {
 const clientSource = `// Server-only client. Keep tokens out of browser bundles and public environment variables.
 import type { DeliveryEntry, EntryByModel, Model, ModelDetail } from "./types";
 
-export type PageOptions = { limit?: number; cursor?: string; maxDepth?: number; signal?: AbortSignal };
-export type CmsPage<T> = { data: T[]; meta: { nextCursor: string | null; maxDepth: number } };
+export type PageOptions = { limit?: number; cursor?: string; maxDepth?: number; locale?: string; signal?: AbortSignal };
+export type CmsPage<T> = { data: T[]; meta: { nextCursor: string | null; maxDepth: number; locale?: string } };
 type EntryFor<M extends string> = M extends keyof EntryByModel ? EntryByModel[M] : DeliveryEntry;
 export class CmsApiError extends Error {
   constructor(public status: number, public code: string, message: string, public requestId: string | null) {
@@ -509,16 +519,16 @@ export function createCmsClient(config: { origin: string; tenantSlug: string; to
   }
   async function listEntries<M extends string>(model: M, options: PageOptions = {}): Promise<CmsPage<EntryFor<M>>> {
     bounded(options.limit, 100, "limit"); bounded(options.maxDepth, 5, "maxDepth");
-    const body = await request(modelPath(model) + "/entries", { limit: options.limit, cursor: options.cursor, maxDepth: options.maxDepth }, options.signal);
+    const body = await request(modelPath(model) + "/entries", { limit: options.limit, cursor: options.cursor, maxDepth: options.maxDepth, locale: options.locale }, options.signal);
     if (!Array.isArray(body.data)) throw new CmsApiError(200, "INVALID_RESPONSE", "CMS entries must be an array", null);
     meta(body, true);
     return body as unknown as CmsPage<EntryFor<M>>;
   }
   return {
-    async listModels(signal?: AbortSignal): Promise<{ data: Model[] }> {
+    async listModels(signal?: AbortSignal): Promise<{ data: Model[]; meta?: { defaultLocale: string; locales: string[] } }> {
       const body = await request(base, {}, signal);
       if (!Array.isArray(body.data)) throw new CmsApiError(200, "INVALID_RESPONSE", "CMS models must be an array", null);
-      return body as { data: Model[] };
+      return body as { data: Model[]; meta?: { defaultLocale: string; locales: string[] } };
     },
     async getModel(model: string, signal?: AbortSignal): Promise<{ data: ModelDetail }> {
       const body = await request(modelPath(model), {}, signal);
@@ -526,12 +536,12 @@ export function createCmsClient(config: { origin: string; tenantSlug: string; to
       return body as { data: ModelDetail };
     },
     listEntries,
-    async getEntry<M extends string>(model: M, id: string, options: Pick<PageOptions, "maxDepth" | "signal"> = {}): Promise<{ data: EntryFor<M>; meta: { maxDepth: number } }> {
+    async getEntry<M extends string>(model: M, id: string, options: Pick<PageOptions, "maxDepth" | "locale" | "signal"> = {}): Promise<{ data: EntryFor<M>; meta: { maxDepth: number; locale?: string } }> {
       bounded(options.maxDepth, 5, "maxDepth");
-      const body = await request(modelPath(model) + "/entries/" + encodeURIComponent(id), { maxDepth: options.maxDepth }, options.signal);
+      const body = await request(modelPath(model) + "/entries/" + encodeURIComponent(id), { maxDepth: options.maxDepth, locale: options.locale }, options.signal);
       if (!body.data || typeof body.data !== "object" || !("data" in body.data)) throw new CmsApiError(200, "INVALID_RESPONSE", "CMS entry is invalid", null);
       meta(body, false);
-      return body as unknown as { data: EntryFor<M>; meta: { maxDepth: number } };
+      return body as unknown as { data: EntryFor<M>; meta: { maxDepth: number; locale?: string } };
     },
     async *iterateEntries<M extends string>(model: M, options: Omit<PageOptions, "cursor"> = {}): AsyncGenerator<EntryFor<M>> {
       let cursor: string | undefined;

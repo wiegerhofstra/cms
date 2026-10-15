@@ -1,4 +1,5 @@
-import type { ContentEntry, ContentField } from "@/lib/cms/types";
+import type { ContentEntry, ContentField, EntryTranslations } from "@/lib/cms/types";
+import { isLocalizedField } from "@/modules/localization/locales";
 import { createEmptyRichTextDocument, isEmptyRichTextDocument, isRichTextDocument, richTextPlainText } from "@/lib/rich-text";
 
 export function parseJsonObject(value: string): Record<string, unknown> {
@@ -63,6 +64,20 @@ export function normalizeEntryData(fields: ContentField[], data: Record<string, 
   return normalized;
 }
 
+/** Translations as they would be saved: only localized fields, without empty values or empty languages. */
+export function normalizeTranslations(fields: ContentField[], translations: EntryTranslations): EntryTranslations {
+  const localizedFields = fields.filter(isLocalizedField);
+  const normalized: EntryTranslations = {};
+
+  for (const [locale, values] of Object.entries(translations)) {
+    const localeValues = Object.fromEntries(localizedFields.flatMap((field) => (field.key in values ? [[field.key, values[field.key]] as const] : [])));
+    const kept = normalizeEntryData(localizedFields, localeValues);
+    if (Object.keys(kept).length) normalized[locale] = kept;
+  }
+
+  return normalized;
+}
+
 export function missingRequiredFields(fields: ContentField[], data: Record<string, unknown>): ContentField[] {
   return fields.filter((field) => field.required && isEmptyFieldValue(data[field.key]));
 }
@@ -75,9 +90,9 @@ export function fieldHelpText(field: ContentField): string {
   return typeof field.config.description === "string" ? field.config.description.trim() : "";
 }
 
-/** Order-independent snapshot of the data that would be saved, used to detect unsaved changes. */
-export function entryDataSnapshot(fields: ContentField[], data: Record<string, unknown>): string {
-  return JSON.stringify(normalizeEntryData(fields, data), (_key, value: unknown) =>
+/** Order-independent snapshot of the data and translations that would be saved, used to detect unsaved changes. */
+export function entryDataSnapshot(fields: ContentField[], data: Record<string, unknown>, translations: EntryTranslations = {}): string {
+  return JSON.stringify([normalizeEntryData(fields, data), normalizeTranslations(fields, translations)], (_key, value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value)
       ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
       : value,

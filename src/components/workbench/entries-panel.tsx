@@ -29,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { AssetWithPreview, ContentEntry, ContentField, ContentModel, EntryRevision } from "@/lib/cms/types";
+import type { AssetWithPreview, ContentEntry, ContentField, ContentModel, EntryRevision, EntryTranslations, TenantLocalization } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { createEntryAction, deleteEntryAction, publishEntryAction, searchEntriesAction, unpublishEntryAction, updateEntryAction } from "./actions";
 import { EntryForm, EntryJsonDialog } from "./entry-form";
@@ -37,7 +37,7 @@ import { EntryStatusLabel, RelativeTime, StatusDot } from "./entry-status";
 import { usePageTitle } from "./page-title";
 import type { ComponentReferenceList } from "./types";
 import { useUnsavedChangesGuard } from "./use-unsaved-changes";
-import { createDefaultEntryData, entryDataSnapshot, entryTitle, formatJson, missingRequiredFields, normalizeEntryData, stringValue, titleValue } from "./utils";
+import { createDefaultEntryData, entryDataSnapshot, entryTitle, formatJson, missingRequiredFields, normalizeEntryData, normalizeTranslations, stringValue, titleValue } from "./utils";
 
 // Matches the server's entry list limit; models with more entries are searched on the server.
 const entryListLimit = 100;
@@ -125,12 +125,13 @@ export function EntryEmptyState({ tenantSlug, modelId }: { tenantSlug: string; m
   );
 }
 
-export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentReferences, entry, revisions }: {
+export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentReferences, localization, entry, revisions }: {
   tenantSlug: string;
   model: ContentModel | null;
   assets: AssetWithPreview[];
   fields: ContentField[];
   componentReferences: ComponentReferenceList[];
+  localization: TenantLocalization;
   entry: ContentEntry;
   revisions: EntryRevision[];
 }) {
@@ -139,10 +140,14 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
   const [listCollapsed, setListCollapsed] = useEntryListCollapsed();
   const savedData = useMemo(() => createDefaultEntryData(fields, entry.data), [fields, entry.data]);
   const [data, setData] = useState(savedData);
+  const [translations, setTranslations] = useState<EntryTranslations>(entry.translations);
   const [jsonOpen, setJsonOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const titleField = fields.find((field) => field.isTitle) ?? null;
-  const isDirty = useMemo(() => entryDataSnapshot(fields, data) !== entryDataSnapshot(fields, savedData), [fields, data, savedData]);
+  const isDirty = useMemo(
+    () => entryDataSnapshot(fields, data, translations) !== entryDataSnapshot(fields, savedData, entry.translations),
+    [fields, data, translations, savedData, entry.translations],
+  );
   const missingFields = missingRequiredFields(fields, data);
   const canSave = !isPending && isDirty && !missingFields.length;
   const isPublished = entry.status === "published";
@@ -166,12 +171,12 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
 
   function save() {
     if (!canSave) return;
-    run(() => updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data)), "Entry saved");
+    run(() => updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data), normalizeTranslations(fields, translations)), "Entry saved");
   }
 
   function publish() {
     run(async () => {
-      if (isDirty) await updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data));
+      if (isDirty) await updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data), normalizeTranslations(fields, translations));
       await publishEntryAction(tenantSlug, entry.id);
     }, isDirty ? "Entry saved and published" : "Entry published");
   }
@@ -229,7 +234,7 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
             <TabsTrigger value="revisions">Revisions</TabsTrigger>
           </TabsList>
           <TabsContent value="content">
-            <EntryForm fields={fields} assets={assets} componentReferences={componentReferences} data={data} onChange={setData} />
+            <EntryForm fields={fields} assets={assets} componentReferences={componentReferences} localization={localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
           </TabsContent>
           <TabsContent value="revisions">
             <RevisionList revisions={revisions} />
@@ -262,13 +267,15 @@ export function EntryCreatePanel(props: {
   assets: AssetWithPreview[];
   fields: ContentField[];
   componentReferences: ComponentReferenceList[];
+  localization: TenantLocalization;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const defaultData = useMemo(() => createDefaultEntryData(props.fields), [props.fields]);
   const [data, setData] = useState(defaultData);
+  const [translations, setTranslations] = useState<EntryTranslations>({});
   const [jsonOpen, setJsonOpen] = useState(false);
-  const isDirty = useMemo(() => entryDataSnapshot(props.fields, data) !== entryDataSnapshot(props.fields, defaultData), [props.fields, data, defaultData]);
+  const isDirty = useMemo(() => entryDataSnapshot(props.fields, data, translations) !== entryDataSnapshot(props.fields, defaultData), [props.fields, data, translations, defaultData]);
   const missingFields = missingRequiredFields(props.fields, data);
   const canCreate = !isPending && props.model.status === "active" && !missingFields.length;
   const appPath = `/app/${props.tenantSlug}`;
@@ -279,7 +286,7 @@ export function EntryCreatePanel(props: {
     if (!canCreate) return;
     startTransition(async () => {
       try {
-        const response = await createEntryAction(props.tenantSlug, props.model.id, normalizeEntryData(props.fields, data));
+        const response = await createEntryAction(props.tenantSlug, props.model.id, normalizeEntryData(props.fields, data), normalizeTranslations(props.fields, translations));
         router.push(`${appPath}/entries/${props.model.id}/${response.entry.id}`);
         router.refresh();
         toast.success("Entry created");
@@ -318,7 +325,7 @@ export function EntryCreatePanel(props: {
         </div>
       </EditorBar>
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-        <EntryForm fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} data={data} onChange={setData} />
+        <EntryForm fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
       </div>
       <EntryJsonDialog open={jsonOpen} onOpenChange={setJsonOpen} data={data} onApply={setData} />
     </EditorCard>
@@ -443,7 +450,7 @@ function RevisionList({ revisions }: { revisions: EntryRevision[] }) {
       {newestFirst.map((revision) => (
         <div key={revision.id} className="rounded-lg border bg-muted/30 p-3">
           <div className="flex items-center justify-between gap-2"><Badge variant="secondary">v{revision.version}</Badge><span className="text-xs text-muted-foreground">{new Date(revision.createdAt).toLocaleString()}</span></div>
-          <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-background p-3 text-xs">{formatJson(revision.data)}</pre>
+          <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-background p-3 text-xs">{formatJson(Object.keys(revision.translations).length ? { data: revision.data, translations: revision.translations } : revision.data)}</pre>
         </div>
       ))}
       {!revisions.length && <p className="text-sm text-muted-foreground">No revisions yet.</p>}

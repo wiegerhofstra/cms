@@ -11,7 +11,7 @@ import { generateIntegrationFiles } from "./generate";
 export async function exportTenantIntegration(tenantSlug: string, origin: string) {
   // One snapshot, including ALL models (the delivery model-list endpoint is capped at 100).
   return db.transaction(async (tx) => {
-    const [tenant] = await tx.select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
+    const [tenant] = await tx.select({ id: tenants.id, name: tenants.name, slug: tenants.slug, defaultLocale: tenants.defaultLocale, locales: tenants.locales })
       .from(tenants).where(eq(tenants.slug, tenantSlug)).limit(1);
     if (!tenant) throw new CmsError("NOT_FOUND", "Tenant was not found");
 
@@ -27,13 +27,13 @@ export async function exportTenantIntegration(tenantSlug: string, origin: string
       .where(and(eq(contentModelFields.tenantId, tenant.id), eq(contentModels.tenantId, tenant.id)));
 
     return generateIntegrationFiles({
-      tenant: { name: tenant.name, slug: tenant.slug },
+      tenant: { name: tenant.name, slug: tenant.slug, defaultLocale: tenant.defaultLocale, locales: tenant.locales },
       origin,
       models: models.map((model) => ({
         ...model,
         fields: fields.filter((field) => field.modelId === model.id).map((field) => ({
           key: field.key, label: field.label, type: field.type, required: field.required,
-          isList: field.isList, isTitle: field.isTitle, config: field.config,
+          isList: field.isList, isTitle: field.isTitle, localized: field.localized, config: field.config,
           targetModelIds: targets.filter((target) => target.fieldId === field.id).map((target) => target.modelId).sort(),
         })),
       })),

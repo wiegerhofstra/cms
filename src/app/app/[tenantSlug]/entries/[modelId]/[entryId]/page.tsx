@@ -25,6 +25,7 @@ async function EntryDetailContent({ params }: { params: Promise<{ tenantSlug: st
       assets={data.assets}
       fields={data.fields}
       componentReferences={data.componentReferences}
+      localization={data.localization}
       entry={data.entry}
       revisions={data.revisions}
     />

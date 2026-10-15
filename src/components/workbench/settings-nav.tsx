@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Braces, Building2, KeyRound, Mail, RefreshCw, Users } from "lucide-react";
+import { Braces, Building2, KeyRound, Languages, Mail, RefreshCw, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 export const settingsLinks = [
   { href: "/app/settings/users", label: "Users", icon: Users },
   { href: "/app/settings/tenants", label: "Tenants", icon: Building2 },
+  { href: "/app/settings/languages", label: "Languages", icon: Languages },
   { href: "/app/settings/auth", label: "Auth", icon: KeyRound },
   { href: "/app/settings/email", label: "Email", icon: Mail },
   { href: "/app/settings/revalidation", label: "Revalidation", icon: RefreshCw },

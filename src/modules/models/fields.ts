@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { type Db } from "@/db";
 import { contentModels } from "@/db/schema";
 import { CmsError as ApiError } from "@/lib/cms/errors";
+import { isLocalizableFieldType } from "@/modules/localization/locales";
 
 import type { FieldInput } from "./validation";
 
@@ -15,6 +16,7 @@ type NormalizedField = {
   targetModelIds: string[];
   isList: boolean;
   isTitle: boolean;
+  localized: boolean;
 };
 
 export async function normalizeFieldInput(db: Db, tenantId: string, input: FieldInput): Promise<NormalizedField> {
@@ -28,6 +30,7 @@ export async function normalizeFieldInput(db: Db, tenantId: string, input: Field
       targetModelIds: [],
       isList: false,
       isTitle: input.isTitle,
+      localized: input.localized && isLocalizableFieldType(input.type),
     };
   }
 
@@ -65,6 +68,7 @@ export async function normalizeFieldInput(db: Db, tenantId: string, input: Field
     targetModelIds: targetModels.map((model) => model.id),
     isList: input.config.isList === true,
     isTitle: input.isTitle,
+    localized: false,
   };
 }
 

@@ -22,14 +22,14 @@ type EndpointDefinition = {
   path: string;
   pathParameters: Array<{ key: "modelSlug" | "entryId"; label: string; placeholder: string; description: string }>;
   queryParameters: Array<{
-    key: "limit" | "cursor" | "maxDepth";
+    key: "limit" | "cursor" | "maxDepth" | "locale";
     label: string;
     placeholder: string;
     description: string;
   }>;
 };
 
-type ParameterValues = Record<"modelSlug" | "entryId" | "limit" | "cursor" | "maxDepth", string>;
+type ParameterValues = Record<"modelSlug" | "entryId" | "limit" | "cursor" | "maxDepth" | "locale", string>;
 
 type ApiResult = {
   status: number | null;
@@ -44,7 +44,7 @@ const endpoints: EndpointDefinition[] = [
   {
     id: "models",
     title: "List content models",
-    description: "Returns the content models available in the selected tenant.",
+    description: "Returns the content models available in the selected tenant, with its languages in meta.",
     path: "/api/content/{tenantSlug}/models",
     pathParameters: [],
     queryParameters: [],
@@ -71,6 +71,7 @@ const endpoints: EndpointDefinition[] = [
       { key: "limit", label: "limit", placeholder: "20", description: "Entries per page, from 1 to 100. Defaults to 20." },
       { key: "cursor", label: "cursor", placeholder: "Cursor from the previous response", description: "Pass meta.nextCursor to request the next page." },
       { key: "maxDepth", label: "maxDepth", placeholder: "1", description: "Component expansion depth, from 1 to 5. Defaults to 1." },
+      { key: "locale", label: "locale", placeholder: "nl", description: "Language of translatable fields. Missing translations use the default value. Defaults to the tenant's default language." },
     ],
   },
   {
@@ -84,6 +85,7 @@ const endpoints: EndpointDefinition[] = [
     ],
     queryParameters: [
       { key: "maxDepth", label: "maxDepth", placeholder: "1", description: "Component expansion depth, from 1 to 5. Defaults to 1." },
+      { key: "locale", label: "locale", placeholder: "nl", description: "Language of translatable fields. Missing translations use the default value. Defaults to the tenant's default language." },
     ],
   },
 ];
@@ -94,6 +96,7 @@ const emptyValues: ParameterValues = {
   limit: "",
   cursor: "",
   maxDepth: "",
+  locale: "",
 };
 
 export function ApiReferencePanel({

@@ -27,6 +27,7 @@ async function NewEntryContent({ params }: { params: Promise<{ tenantSlug: strin
       assets={data.assets}
       fields={data.fields}
       componentReferences={data.componentReferences}
+      localization={data.localization}
     />
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Image from "next/image";
 import { ArrowDown, ArrowUp, ChevronRight, FileIcon, ImageIcon, Plus, Trash2 } from "lucide-react";
 
@@ -15,7 +15,9 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
-import type { AssetWithPreview, ContentEntry, ContentField } from "@/lib/cms/types";
+import type { AssetWithPreview, ContentEntry, ContentField, EntryTranslations, TenantLocalization } from "@/lib/cms/types";
+import { cn } from "@/lib/utils";
+import { isEmptyLocalizedValue, isLocalizedField, localeLabel } from "@/modules/localization/locales";
 import type { ComponentReferenceList } from "./types";
 import { RichTextEditor } from "./rich-text-editor";
 import { entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, numberInputValue, parseJsonObject, stringValue } from "./utils";
@@ -24,11 +26,14 @@ type EntryFormProps = {
   fields: ContentField[];
   assets: AssetWithPreview[];
   componentReferences: ComponentReferenceList[];
+  localization: TenantLocalization;
   data: Record<string, unknown>;
+  translations: EntryTranslations;
   onChange: (data: Record<string, unknown>) => void;
+  onTranslationsChange: (translations: EntryTranslations) => void;
 };
 
-export function EntryForm({ fields, assets, componentReferences, data, onChange }: EntryFormProps) {
+export function EntryForm({ fields, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: EntryFormProps) {
   if (!fields.length) {
     return (
       <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
@@ -42,6 +47,22 @@ export function EntryForm({ fields, assets, componentReferences, data, onChange 
   const hiddenFieldsNeedInput = missingRequiredFields(hiddenFields, data).length > 0;
 
   function renderField(field: ContentField) {
+    if (isLocalizedField(field) && localization.locales.length > 1) {
+      return (
+        <LocalizedEntryField
+          key={field.id}
+          field={field}
+          assets={assets}
+          componentReferences={componentReferences}
+          localization={localization}
+          data={data}
+          translations={translations}
+          onChange={onChange}
+          onTranslationsChange={onTranslationsChange}
+        />
+      );
+    }
+
     return (
       <EntryFieldInput key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => onChange({ ...data, [field.key]: value })} />
     );
@@ -66,26 +87,106 @@ export function EntryForm({ fields, assets, componentReferences, data, onChange 
   );
 }
 
-function FieldHelp({ field, hint, hintId }: { field: ContentField; hint?: string; hintId?: string }) {
+/** One translatable field: the language switch picks which value the input edits. The default language lives in the entry data. */
+function LocalizedEntryField({ field, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: Omit<EntryFormProps, "fields"> & { field: ContentField }) {
+  const [locale, setLocale] = useState(localization.defaultLocale);
+  const isDefault = locale === localization.defaultLocale;
+  const value = isDefault ? data[field.key] : translations[locale]?.[field.key];
+  const translatedLocales = new Set(localization.locales.filter((item) => !isEmptyLocalizedValue(translations[item]?.[field.key])));
+  const defaultLabel = localeLabel(localization.defaultLocale);
+
+  function update(nextValue: unknown) {
+    if (isDefault) onChange({ ...data, [field.key]: nextValue });
+    else onTranslationsChange({ ...translations, [locale]: { ...translations[locale], [field.key]: nextValue } });
+  }
+
+  return (
+    <EntryFieldInput
+      // Remount per language so editors with internal state (rich text, pickers) start from that language's value.
+      key={locale}
+      // Translations are optional: an empty one falls back to the default language.
+      field={isDefault ? field : { ...field, required: false }}
+      idSuffix={locale}
+      assets={assets}
+      componentReferences={componentReferences}
+      value={value}
+      onChange={update}
+      placeholder={isDefault ? undefined : stringValue(data[field.key]) || undefined}
+      note={isDefault ? undefined : `Leave empty to use the ${defaultLabel} value.`}
+      labelAddon={<LocaleSwitch label={field.label} localization={localization} active={locale} translated={translatedLocales} onSelect={setLocale} />}
+    />
+  );
+}
+
+function LocaleSwitch({ label, localization, active, translated, onSelect }: { label: string; localization: TenantLocalization; active: string; translated: Set<string>; onSelect: (locale: string) => void }) {
+  return (
+    <div role="group" aria-label={`${label} language`} className="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/40 p-0.5">
+      {localization.locales.map((locale) => {
+        const isDefault = locale === localization.defaultLocale;
+        const status = isDefault ? "default language" : translated.has(locale) ? "translated" : "not translated, uses the default";
+        return (
+          <button
+            key={locale}
+            type="button"
+            aria-pressed={locale === active}
+            title={`${localeLabel(locale)} (${status})`}
+            className={cn(
+              "flex items-center gap-1 rounded px-2 py-0.5 font-mono text-xs text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+              locale === active && "bg-background text-foreground shadow-sm",
+            )}
+            onClick={() => onSelect(locale)}
+          >
+            {locale}
+            {!isDefault ? <span aria-hidden className={cn("size-1.5 rounded-full", translated.has(locale) ? "bg-primary" : "bg-muted-foreground/30")} /> : null}
+            <span className="sr-only">, {status}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function EntryFieldLabel({ field, htmlFor, addon }: { field: ContentField; htmlFor?: string; addon?: ReactNode }) {
+  const label = <FieldLabel htmlFor={htmlFor}>{field.label}{field.required ? " *" : ""}</FieldLabel>;
+  if (!addon) return label;
+  return <div className="flex flex-wrap items-center justify-between gap-2">{label}{addon}</div>;
+}
+
+function FieldHelp({ field, hint, hintId, note }: { field: ContentField; hint?: string; hintId?: string; note?: string }) {
   const helpText = fieldHelpText(field);
 
   return (
     <>
       {helpText ? <FieldDescription>{helpText}</FieldDescription> : null}
       {hint ? <FieldDescription id={hintId}>{hint}</FieldDescription> : null}
+      {note ? <FieldDescription>{note}</FieldDescription> : null}
     </>
   );
 }
 
-function EntryFieldInput({ field, assets, componentReferences, value, onChange }: { field: ContentField; assets: AssetWithPreview[]; componentReferences: ComponentReferenceList[]; value: unknown; onChange: (value: unknown) => void }) {
-  const fieldId = `entry-field-${field.id}`;
+type EntryFieldInputProps = {
+  field: ContentField;
+  assets: AssetWithPreview[];
+  componentReferences: ComponentReferenceList[];
+  value: unknown;
+  onChange: (value: unknown) => void;
+  /** Distinguishes the input ids of a field shown in several languages. */
+  idSuffix?: string;
+  labelAddon?: ReactNode;
+  placeholder?: string;
+  note?: string;
+};
+
+function EntryFieldInput({ field, assets, componentReferences, value, onChange, idSuffix, labelAddon, placeholder, note }: EntryFieldInputProps) {
+  const fieldId = `entry-field-${field.id}${idSuffix ? `-${idSuffix}` : ""}`;
+  const label = <EntryFieldLabel field={field} htmlFor={fieldId} addon={labelAddon} />;
 
   if (field.type === "boolean") {
     return (
       <Field orientation="horizontal">
         <Checkbox id={fieldId} checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} />
         <div>
-          <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+          {label}
           <FieldHelp field={field} />
         </div>
       </Field>
@@ -95,9 +196,9 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
   if (field.type === "rich_text") {
     return (
       <Field>
-        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+        {label}
         <RichTextEditor id={fieldId} value={value} config={field.config} assets={assets} onChange={onChange} />
-        <FieldHelp field={field} />
+        <FieldHelp field={field} note={note} />
       </Field>
     );
   }
@@ -105,7 +206,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
   if (field.type === "number") {
     return (
       <Field>
-        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+        {label}
         <Input id={fieldId} type="number" value={numberInputValue(value)} onChange={(event) => onChange(event.target.value === "" ? "" : Number(event.target.value))} />
         <FieldHelp field={field} />
       </Field>
@@ -115,7 +216,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
   if (field.type === "time") {
     return (
       <Field>
-        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+        {label}
         <TimePicker id={fieldId} label={field.label} value={stringValue(value)} required={field.required} describedBy={`${fieldId}-description`} onChange={onChange} />
         <FieldHelp field={field} hintId={`${fieldId}-description`} hint="Local time in 24-hour format (00:00–23:59). Type two digits or use the arrow keys to choose." />
       </Field>
@@ -125,7 +226,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
   if (field.type === "date") {
     return (
       <Field>
-        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
+        {label}
         <Input id={fieldId} type="date" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
         <FieldHelp field={field} />
       </Field>
@@ -135,9 +236,9 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
   if (field.type === "url") {
     return (
       <Field>
-        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-        <Input id={fieldId} type="url" inputMode="url" placeholder="https://example.com" value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-        <FieldHelp field={field} hint="Enter a complete URL, including https://." />
+        {label}
+        <Input id={fieldId} type="url" inputMode="url" placeholder={placeholder ?? "https://example.com"} value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
+        <FieldHelp field={field} hint="Enter a complete URL, including https://." note={note} />
       </Field>
     );
   }
@@ -145,22 +246,22 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange }
   if (field.type === "slug") {
     return (
       <Field>
-        <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-        <Input id={fieldId} value={stringValue(value)} pattern="[a-z0-9_\-]+" placeholder="my-page_slug" onChange={(event) => onChange(normalizeSlugInput(event.target.value))} />
-        <FieldHelp field={field} hint={`Use lowercase letters, numbers, hyphens, and underscores${field.config.unique === true ? ". Must be unique" : ""}.`} />
+        {label}
+        <Input id={fieldId} value={stringValue(value)} pattern="[a-z0-9_\-]+" placeholder={placeholder ?? "my-page_slug"} onChange={(event) => onChange(normalizeSlugInput(event.target.value))} />
+        <FieldHelp field={field} hint={`Use lowercase letters, numbers, hyphens, and underscores${field.config.unique === true ? ". Must be unique" : ""}.`} note={note} />
       </Field>
     );
   }
 
   if (field.type === "enum") return <EnumFieldInput field={field} value={value} onChange={onChange} />;
-  if (field.type === "asset") return <AssetFieldInput field={field} assets={assets} value={value} onChange={onChange} />;
+  if (field.type === "asset") return <AssetFieldInput label={<EntryFieldLabel field={field} addon={labelAddon} />} field={field} assets={assets} value={value} onChange={onChange} note={note} />;
   if (field.type === "component") return <ComponentFieldInput field={field} referenceLists={componentReferences.filter((referenceList) => referenceList.fieldId === field.id)} value={value} onChange={onChange} />;
 
   return (
     <Field>
-      <FieldLabel htmlFor={fieldId}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-      <Input id={fieldId} value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
-      <FieldHelp field={field} />
+      {label}
+      <Input id={fieldId} placeholder={placeholder} value={stringValue(value)} onChange={(event) => onChange(event.target.value)} />
+      <FieldHelp field={field} note={note} />
     </Field>
   );
 }
@@ -190,7 +291,7 @@ function EnumFieldInput({ field, value, onChange }: { field: ContentField; value
   );
 }
 
-function AssetFieldInput({ field, assets, value, onChange }: { field: ContentField; assets: AssetWithPreview[]; value: unknown; onChange: (value: unknown) => void }) {
+function AssetFieldInput({ label, field, assets, value, onChange, note }: { label: ReactNode; field: ContentField; assets: AssetWithPreview[]; value: unknown; onChange: (value: unknown) => void; note?: string }) {
   const [open, setOpen] = useState(false);
   const readyAssets = assets.filter((asset) => asset.status === "ready");
   const assetId = stringValue(value);
@@ -203,7 +304,7 @@ function AssetFieldInput({ field, assets, value, onChange }: { field: ContentFie
 
   return (
     <Field>
-      <FieldLabel>{field.label}{field.required ? " *" : ""}</FieldLabel>
+      {label}
       {assetId ? <SelectedAssetCard assetId={assetId} asset={selectedAsset} onChange={() => setOpen(true)} onRemove={() => onChange(null)} /> : null}
       {!assetId ? (
         <Button type="button" variant="outline" className="w-fit" disabled={!readyAssets.length} onClick={() => setOpen(true)}>
@@ -211,7 +312,7 @@ function AssetFieldInput({ field, assets, value, onChange }: { field: ContentFie
         </Button>
       ) : null}
       <AssetPickerDialog open={open} onOpenChange={setOpen} assets={readyAssets} selectedAssetId={assetId} onSelect={selectAsset} />
-      <FieldHelp field={field} />
+      <FieldHelp field={field} note={note} />
     </Field>
   );
 }

@@ -17,5 +17,5 @@ async function ModelsContent({ params }: { params: Promise<{ tenantSlug: string 
   const data = await getCmsPageData({ tenantSlug, view: "models" });
   const activeModel = data.models.find((model) => model.id === data.activeModelId) ?? null;
 
-  return <ModelsPanel tenantSlug={tenantSlug} models={data.models} activeModel={activeModel} activeModelId={data.activeModelId} fields={data.fields} hasActiveModelEntries={data.entries.length > 0} />;
+  return <ModelsPanel tenantSlug={tenantSlug} models={data.models} activeModel={activeModel} activeModelId={data.activeModelId} fields={data.fields} localization={data.localization} hasActiveModelEntries={data.entries.length > 0} />;
 }

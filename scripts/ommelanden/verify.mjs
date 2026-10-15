@@ -62,7 +62,7 @@ try {
   for (const entry of plan.entries) {
     if (entry.status !== "published") continue;
     await validateEntryForPublish(db, before.tenant.id, entry.id);
-    const delivered = await getPublishedEntry({ tenantId: before.tenant.id, modelSlug: entry.slug, entryId: entry.id, maxDepth: 2 });
+    const { entry: delivered } = await getPublishedEntry({ tenantId: before.tenant.id, modelSlug: entry.slug, entryId: entry.id, maxDepth: 2, locale: null });
     assert.equal(delivered.id, entry.id);
     for (const field of before.models.find((m) => m.slug === entry.slug).fields) {
       const value = entry.data[field.key];
@@ -73,7 +73,7 @@ try {
   }
   // Use small pages because delivery has a bounded rich-text expansion budget.
   for (const modelSlug of Object.keys(plan.sourceCounts)) {
-    const result = await listPublishedEntries({ tenantId: before.tenant.id, modelSlug, limit: 1, cursor: null, maxDepth: 1 });
+    const result = await listPublishedEntries({ tenantId: before.tenant.id, modelSlug, limit: 1, cursor: null, maxDepth: 1, locale: null });
     assert.ok(result.entries.length > 0, `Empty imported collection: ${modelSlug}`);
   }
   const verification = { publishedEntriesChecked: checked, sourceDatabaseUnchanged: true, sourceMediaUnchanged: media.length,

@@ -15,6 +15,8 @@ import {
 import { user } from "./auth";
 import { tenants } from "./tenants";
 
+export type EntryTranslations = Record<string, Record<string, unknown>>;
+
 export const modelStatus = pgEnum("model_status", ["active", "archived"]);
 export const modelKind = pgEnum("model_kind", ["content", "block"]);
 export const entryStatus = pgEnum("entry_status", ["draft", "published"]);
@@ -73,6 +75,7 @@ export const contentModelFields = pgTable(
     config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
     isList: boolean("is_list").notNull().default(false),
     isTitle: boolean("is_title").notNull().default(false),
+    localized: boolean("localized").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -113,6 +116,8 @@ export const contentEntries = pgTable(
       .references(() => contentModels.id, { onDelete: "restrict" }),
     status: entryStatus("status").notNull().default("draft"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+    /** Values of localized fields per non-default locale, e.g. { nl: { title: "…" } }. */
+    translations: jsonb("translations").$type<EntryTranslations>().notNull().default({}),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     parentEntryId: uuid("parent_entry_id"),
@@ -147,6 +152,7 @@ export const entryRevisions = pgTable(
       .references(() => contentEntries.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
+    translations: jsonb("translations").$type<EntryTranslations>().notNull().default({}),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
