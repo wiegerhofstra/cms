@@ -28,6 +28,8 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
   const features = richTextFeaturesFromConfig(config);
   const featureKey = Object.values(features).join(":");
   const readyAssets = assets.filter((asset) => asset.status === "ready");
+  // The parent passes a fresh assets array on every render; keying on ids keeps the editor (and its focus) alive while typing.
+  const assetKey = readyAssets.map((asset) => asset.id).join(":");
   const editor = useEditor(
     {
       immediatelyRender: false,
@@ -50,7 +52,7 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
       },
       onUpdate: ({ editor }) => onChange(editor.getJSON()),
     },
-    [assets, featureKey],
+    [assetKey, featureKey],
   );
 
   useEffect(() => {
