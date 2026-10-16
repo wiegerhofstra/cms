@@ -351,3 +351,22 @@ test("rich text renders to escaped HTML with safe links, stable asset URLs and g
     for (const ok of ["https://x.invalid", "mailto:a@b.invalid", "tel:+31", "/path", "#top"]) assert.equal(safeHref(ok), ok);
   }, "rich-text.ts");
 });
+
+test("page URL configuration and resolved link rendering are included in integration exports", async () => {
+  const configured = structuredClone(fixture);
+  configured.models[0].pageUrl = { pattern: "/news/{slug}", slugField: "slug" };
+  const bundle = generateIntegrationFiles(configured);
+  assert.deepEqual(JSON.parse(bundle["manifest.json"]).models.find((model) => model.id === articleId).pageUrl, configured.models[0].pageUrl);
+  assert.equal(JSON.parse(bundle["examples/responses.json"]).byModel.article.compact.data[0].url, "/news/example-page");
+  assert.notEqual(JSON.parse(bundle["manifest.json"]).schemaHash, JSON.parse(files["manifest.json"]).schemaHash);
+  await withClient(async ({ renderRichText }) => {
+    const html = renderRichText({ type: "paragraph", content: [
+      { type: "text", text: "Page", marks: [{ type: "link", attrs: { kind: "page", entryId: articleId, href: "/care", target: "_blank" } }] },
+      { type: "text", text: "File", marks: [{ type: "link", attrs: { kind: "asset", assetId: heroId, href: "https://cms.invalid/durable-file" } }] },
+      { type: "text", text: "Unavailable", marks: [{ type: "link", attrs: { kind: "page", entryId: ctaId, href: null, missing: true } }] },
+    ] });
+    assert.match(html, /<a href="\/care" target="_blank" rel="noopener noreferrer">Page<\/a>/);
+    assert.match(html, /<a href="https:\/\/cms.invalid\/durable-file" rel="noopener noreferrer">File<\/a>/);
+    assert.ok(html.endsWith("Unavailable</p>"));
+  }, "rich-text.ts");
+});

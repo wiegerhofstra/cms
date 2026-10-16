@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ContentField, ContentModel, FieldInput, ModelKind, TenantLocalization } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { archiveModelAction, createModelAction, deleteModelAction, updateModelAction } from "./actions";
+import { PageUrlSettings } from "./page-url-settings";
 import { FieldEditor, FieldTable } from "./model-fields";
 
 export function ModelsPanel(props: {
@@ -155,6 +156,8 @@ export function ModelsPanel(props: {
                 </Button>
               </div>
             </section>
+
+            <PageUrlSettings key={`${props.activeModel.id}:${JSON.stringify(props.activeModel.pageUrl)}`} tenantSlug={props.tenantSlug} model={props.activeModel} fields={props.fields} locale={props.localization.defaultLocale} />
 
             <section aria-labelledby="model-fields-heading">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">

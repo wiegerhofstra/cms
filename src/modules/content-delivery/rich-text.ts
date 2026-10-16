@@ -1,8 +1,12 @@
 import { CmsError } from "../../lib/cms/errors.ts";
+import { safeLinkHref } from "../../lib/links.ts";
 
 export const richTextLimits = { documentValues: 2_000, responseValues: 20_000, depth: 100 } as const;
 
-export function createRichTextAssetResolver(deliveryAsset: (id: string) => Promise<unknown>) {
+export function createRichTextAssetResolver(
+  deliveryAsset: (id: string) => Promise<unknown>,
+  deliveryPage: (id: string) => Promise<{ href: string } | null> = async () => null,
+) {
   let responseValues = 0;
   return async function resolveDocument(value: unknown): Promise<unknown> {
     let documentValues = 0;
@@ -15,6 +19,18 @@ export function createRichTextAssetResolver(deliveryAsset: (id: string) => Promi
       if (Array.isArray(value)) return Promise.all(value.map((item) => visit(item, depth + 1)));
       if (typeof value !== "object" || value === null) return value;
       const record = value as Record<string, unknown>;
+      if (record.type === "link" && typeof record.attrs === "object" && record.attrs !== null) {
+        const attrs = record.attrs as Record<string, unknown>;
+        if (attrs.kind === "page") {
+          const page = typeof attrs.entryId === "string" ? await deliveryPage(attrs.entryId) : null;
+          return { ...record, attrs: { ...attrs, href: page?.href ?? null, missing: !page } };
+        }
+        if (attrs.kind === "asset") {
+          const asset = typeof attrs.assetId === "string" ? await deliveryAsset(attrs.assetId) as { downloadUrl?: string } | null : null;
+          return { ...record, attrs: { ...attrs, href: asset?.downloadUrl ?? null, missing: !asset?.downloadUrl } };
+        }
+        return { ...record, attrs: { ...attrs, href: safeLinkHref(attrs.href) } };
+      }
       if (record.type === "asset" && typeof record.attrs === "object" && record.attrs !== null) {
         const attrs = record.attrs as Record<string, unknown>;
         if (typeof attrs.assetId === "string") return { ...record, attrs: { ...attrs, asset: await deliveryAsset(attrs.assetId) } };

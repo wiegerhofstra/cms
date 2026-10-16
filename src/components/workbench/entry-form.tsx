@@ -65,6 +65,7 @@ export function EntryForm({ tenantSlug, fields, assets: loadedAssets, componentR
       return (
         <LocalizedEntryField
           key={field.id}
+          tenantSlug={tenantSlug}
           field={field}
           assets={assets}
           componentReferences={componentReferences}
@@ -79,7 +80,7 @@ export function EntryForm({ tenantSlug, fields, assets: loadedAssets, componentR
     }
 
     return (
-      <EntryFieldInput key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => onChange({ ...data, [field.key]: value })} onUpload={upload} />
+      <EntryFieldInput tenantSlug={tenantSlug} locale={localization.defaultLocale} key={field.id} field={field} assets={assets} componentReferences={componentReferences} value={data[field.key]} onChange={(value) => onChange({ ...data, [field.key]: value })} onUpload={upload} />
     );
   }
 
@@ -103,7 +104,7 @@ export function EntryForm({ tenantSlug, fields, assets: loadedAssets, componentR
 }
 
 /** One translatable field: the language switch picks which value the input edits. The default language lives in the entry data. */
-function LocalizedEntryField({ field, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange, onUpload }: Omit<EntryFormProps, "fields" | "tenantSlug"> & { field: ContentField; onUpload: (file: File) => Promise<AssetWithPreview> }) {
+function LocalizedEntryField({ tenantSlug, field, assets, componentReferences, localization, data, translations, onChange, onTranslationsChange, onUpload }: Omit<EntryFormProps, "fields"> & { field: ContentField; onUpload: (file: File) => Promise<AssetWithPreview> }) {
   const [locale, setLocale] = useState(localization.defaultLocale);
   const isDefault = locale === localization.defaultLocale;
   const value = isDefault ? data[field.key] : translations[locale]?.[field.key];
@@ -119,6 +120,8 @@ function LocalizedEntryField({ field, assets, componentReferences, localization,
     <EntryFieldInput
       // Remount per language so editors with internal state (rich text, pickers) start from that language's value.
       key={locale}
+      tenantSlug={tenantSlug}
+      locale={locale}
       // Translations are optional: an empty one falls back to the default language.
       field={isDefault ? field : { ...field, required: false }}
       idSuffix={locale}
@@ -181,6 +184,8 @@ function FieldHelp({ field, hint, hintId, note }: { field: ContentField; hint?: 
 }
 
 type EntryFieldInputProps = {
+  tenantSlug: string;
+  locale: string;
   field: ContentField;
   assets: AssetWithPreview[];
   componentReferences: ComponentReferenceList[];
@@ -194,7 +199,7 @@ type EntryFieldInputProps = {
   note?: string;
 };
 
-function EntryFieldInput({ field, assets, componentReferences, value, onChange, onUpload, idSuffix, labelAddon, placeholder, note }: EntryFieldInputProps) {
+function EntryFieldInput({ tenantSlug, locale, field, assets, componentReferences, value, onChange, onUpload, idSuffix, labelAddon, placeholder, note }: EntryFieldInputProps) {
   const fieldId = `entry-field-${field.id}${idSuffix ? `-${idSuffix}` : ""}`;
   const label = <EntryFieldLabel field={field} htmlFor={fieldId} addon={labelAddon} />;
 
@@ -214,7 +219,7 @@ function EntryFieldInput({ field, assets, componentReferences, value, onChange, 
     return (
       <Field>
         {label}
-        <RichTextEditor id={fieldId} value={value} config={field.config} assets={assets} onChange={onChange} />
+        <RichTextEditor tenantSlug={tenantSlug} locale={locale} id={fieldId} value={value} config={field.config} assets={assets} onChange={onChange} />
         <FieldHelp field={field} note={note} />
       </Field>
     );

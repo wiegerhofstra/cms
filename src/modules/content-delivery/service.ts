@@ -6,6 +6,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
+import { resolvePagePath } from "@/lib/links";
+import { assetDownloadUrl } from "@/modules/uploads/download";
 import { presignRead } from "@/lib/storage/s3";
 import { canonicalLocale, isLocalizedField, localizeEntryData, type TenantLocalization } from "@/modules/localization/locales";
 import { getTenantLocalization } from "@/modules/localization/tenant";
@@ -150,6 +152,7 @@ async function serializeDeliveryAsset(asset: typeof assets.$inferSelect) {
     sizeBytes: asset.sizeBytes,
     imageWidth: asset.imageWidth,
     imageHeight: asset.imageHeight,
+    downloadUrl: assetDownloadUrl(asset.tenantId, asset.id),
     url: await presignRead({ bucket: asset.bucket, objectKey: asset.objectKey, expiresIn: 300 }),
   };
 }
@@ -205,7 +208,36 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
   const assetsById = new Map<string, Promise<unknown>>();
   let componentReferenceCount = 0;
   let resolvedAssetCount = 0;
-  const resolveRichTextAssets = createRichTextAssetResolver(deliveryAsset);
+  const modelsById = new Map<string, Promise<typeof contentModels.$inferSelect | null>>();
+  const pagesById = new Map<string, Promise<{ href: string } | null>>();
+  const resolveRichTextAssets = createRichTextAssetResolver(deliveryAsset, deliveryPage);
+
+  function model(id: string) {
+    let result = modelsById.get(id);
+    if (!result) {
+      result = db.select().from(contentModels).where(and(eq(contentModels.tenantId, tenantId), eq(contentModels.id, id))).limit(1).then((rows) => rows[0] ?? null);
+      modelsById.set(id, result);
+    }
+    return result;
+  }
+
+  async function deliveryPage(id: string): Promise<{ href: string } | null> {
+    if (!z.uuid().safeParse(id).success) return null;
+    let result = pagesById.get(id);
+    if (!result) {
+      if (pagesById.size >= 200) throw new CmsError("BAD_REQUEST", "Expanded content cannot exceed 200 linked pages");
+      result = (async () => {
+        const entry = await publishedEntry(id);
+        if (!entry || entry.parentEntryId) return null;
+        const target = await model(entry.modelId);
+        const data = localizeEntryData(await fields(entry.modelId), entry.data, entry.translations, locale, localization);
+        const href = resolvePagePath(target?.pageUrl, data, locale);
+        return href ? { href } : null;
+      })();
+      pagesById.set(id, result);
+    }
+    return result;
+  }
 
   async function fields(modelId: string) {
     let result = fieldsByModel.get(modelId);
@@ -238,6 +270,7 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
   }
 
   async function deliveryAsset(assetId: string) {
+    if (!z.uuid().safeParse(assetId).success) return null;
     let result = assetsById.get(assetId);
     if (!result) {
       resolvedAssetCount += 1;
@@ -281,6 +314,7 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
     return {
       id: entry.id,
       modelId: entry.modelId,
+      url: entry.parentEntryId ? null : resolvePagePath((await model(entry.modelId))?.pageUrl, data, locale),
       status: entry.status,
       data: resolvedData,
       publishedAt: entry.publishedAt?.toISOString() ?? null,
@@ -355,6 +389,7 @@ function serializeModel(model: typeof contentModels.$inferSelect) {
     id: model.id,
     name: model.name,
     slug: model.slug,
+    pageUrl: model.pageUrl,
     status: model.status,
     createdAt: model.createdAt.toISOString(),
     updatedAt: model.updatedAt.toISOString(),

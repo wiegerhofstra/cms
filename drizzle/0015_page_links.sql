@@ -1,0 +1,1 @@
+ALTER TABLE "content_models" ADD COLUMN "page_url" jsonb;

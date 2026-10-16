@@ -13,3 +13,8 @@ test("finds selected and nested rich-text images beyond the asset picker page", 
   assert.deepEqual(referencedAssetIds(fields, data), [a, b]);
   assert.deepEqual(referencedAssetIds(fields, { image: "invalid", content: null, title: a, stale: b }), []);
 });
+
+test("inline asset links are included in asset references", () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  assert.deepEqual(referencedAssetIds([{ key: "body", type: "rich_text" }], { body: { type: "doc", content: [{ type: "text", text: "PDF", marks: [{ type: "link", attrs: { kind: "asset", assetId: id } }] }] } }), [id]);
+});

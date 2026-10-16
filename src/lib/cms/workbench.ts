@@ -33,6 +33,7 @@ import { getEnv } from "@/lib/env";
 import { deleteS3Object, presignRead, presignUpload } from "@/lib/storage/s3";
 import { setActiveTenantId } from "@/lib/tenant/active-tenant";
 import { createEntryRevision, getActiveModel, getTenantEntry, sanitizeEntryTranslations, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
+import { lockPagePaths, validatePagePaths, validatePageUrlConfig } from "@/modules/entries/links";
 import { referencedAssetIds } from "@/modules/entries/assets";
 import { childEntrySchema, entryDataSchema, entryStatusSchema, reorderChildrenSchema, updateEntrySchema } from "@/modules/entries/validation";
 import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields";
@@ -570,11 +571,14 @@ export async function updateModel(modelId: string, input: unknown, tenantSlug?: 
   modelStatusSchema.optional().parse(data.status);
 
   try {
-    const [model] = await db
-      .update(contentModels)
-      .set({ ...data, updatedBy: context.user.id, updatedAt: new Date() })
-      .where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId)))
-      .returning();
+    const model = await db.transaction(async (tx) => {
+      await lockPagePaths(tx, context.activeTenantId);
+      if (data.pageUrl !== undefined) await validatePageUrlConfig(tx, context.activeTenantId, modelId, data.pageUrl);
+      const [updated] = await tx.update(contentModels)
+        .set({ ...data, updatedBy: context.user.id, updatedAt: new Date() })
+        .where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId))).returning();
+      return updated;
+    });
 
     if (!model) {
       throw new ApiError("NOT_FOUND", "Model was not found");
@@ -762,9 +766,15 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
     localized: data.localized ?? currentField.localized,
   };
   const normalizedField = await normalizeFieldInput(db, context.activeTenantId, mergedInput);
-
   try {
     const field = await db.transaction(async (tx) => {
+      await lockPagePaths(tx, context.activeTenantId);
+      const [linkedModel] = await tx.select({ pageUrl: contentModels.pageUrl }).from(contentModels).where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId))).limit(1);
+      if (linkedModel?.pageUrl?.pattern.includes("{slug}") && linkedModel.pageUrl.slugField === currentField.key &&
+        (normalizedField.key !== currentField.key || normalizedField.type !== "slug" || !normalizedField.required || normalizedField.config.unique !== true)) {
+        throw new ApiError("CONFLICT", "This field is used for page URLs. Change the model's page URL settings first.");
+      }
+
       const { targetModelIds, ...fieldValues } = normalizedField;
       if (normalizedField.isTitle) {
         await tx
@@ -797,6 +807,7 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
       if (currentField.localized && !normalizedField.localized) {
         await removeFieldTranslations(tx, context.activeTenantId, modelId, currentField.key);
       }
+      if (linkedModel?.pageUrl && currentField.localized !== normalizedField.localized) await validatePagePaths(tx, context.activeTenantId);
       return updatedField;
     });
 
@@ -833,6 +844,9 @@ export async function deleteField(modelId: string, fieldId: string, tenantSlug?:
   if (entryWithFieldData) throw new ApiError("CONFLICT", "Field cannot be removed because entry data exists");
 
   await db.transaction(async (tx) => {
+    await lockPagePaths(tx, context.activeTenantId);
+    const [linkedModel] = await tx.select({ pageUrl: contentModels.pageUrl }).from(contentModels).where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId))).limit(1);
+    if (linkedModel?.pageUrl?.pattern.includes("{slug}") && linkedModel.pageUrl.slugField === field.key) throw new ApiError("CONFLICT", "This field is used for page URLs. Change the model's page URL settings first.");
     await tx.delete(contentModelFields).where(and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.modelId, modelId), eq(contentModelFields.id, fieldId)));
     await removeFieldTranslations(tx, context.activeTenantId, modelId, field.key);
   });
@@ -881,13 +895,13 @@ export async function updateEntry(entryId: string, input: unknown, translationsI
   if (!currentEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
   await getActiveModel(db, context.activeTenantId, currentEntry.modelId);
   const translations = await sanitizeEntryTranslations(db, context.activeTenantId, currentEntry.modelId, data.translations ?? currentEntry.translations);
-  if (currentEntry.status === "published") {
-    await validateEntryDataForPublish(db, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
-  } else {
-    await validateEntryData(db, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
-  }
-
   const entry = await db.transaction(async (tx) => {
+    await lockPagePaths(tx, context.activeTenantId);
+    if (currentEntry.status === "published") {
+      await validateEntryDataForPublish(tx, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
+    } else {
+      await validateEntryData(tx, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
+    }
     const [updatedEntry] = await tx
       .update(contentEntries)
       .set({ data: data.data, translations, updatedBy: context.user.id, updatedAt: new Date() })
@@ -922,6 +936,7 @@ export async function deleteEntry(entryId: string, tenantSlug?: string) {
 export async function publishEntry(entryId: string, tenantSlug?: string) {
   const context = await requireTenantContext(crypto.randomUUID(), tenantSlug);
   const entry = await db.transaction(async (tx) => {
+    await lockPagePaths(tx, context.activeTenantId);
     const [currentEntry] = await tx
       .select()
       .from(contentEntries)

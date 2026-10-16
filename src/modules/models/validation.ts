@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageUrlSchema } from "../../lib/links.ts";
 
 export const modelStatusSchema = z.enum(["active", "archived"]);
 export const modelKindSchema = z.enum(["content", "block"]);
@@ -51,8 +52,9 @@ export const updateModelSchema = z
     name: z.string().trim().min(1).max(120).optional(),
     status: modelStatusSchema.optional(),
     kind: modelKindSchema.optional(),
+    pageUrl: pageUrlSchema.nullable().optional(),
   })
-  .refine((value) => value.name !== undefined || value.status !== undefined || value.kind !== undefined, {
+  .refine((value) => Object.keys(value).length > 0, {
     message: "Provide at least one field to update",
   });
 

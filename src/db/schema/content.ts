@@ -14,6 +14,7 @@ import {
 
 import { user } from "./auth";
 import { tenants } from "./tenants";
+import type { PageUrlConfig } from "../../lib/links";
 
 export type EntryTranslations = Record<string, Record<string, unknown>>;
 
@@ -45,6 +46,7 @@ export const contentModels = pgTable(
     slug: text("slug").notNull(),
     status: modelStatus("status").notNull().default("active"),
     kind: modelKind("kind").notNull().default("content"),
+    pageUrl: jsonb("page_url").$type<PageUrlConfig>(),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

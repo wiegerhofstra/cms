@@ -26,3 +26,22 @@ test("table structure and media attributes survive delivery without mutating sto
   assert.equal(delivered.content[0].content[0].content[0].content[0].attrs.asset.id, "image-1");
   assert.deepEqual(input, original);
 });
+
+test("reference links resolve current destinations and never fall back to a stale stored href", async () => {
+  const input = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Read more", marks: [
+    { type: "link", attrs: { kind: "page", entryId: "page", href: "/old", target: "_blank" } },
+    { type: "link", attrs: { kind: "asset", assetId: "pdf", href: "https://expired.invalid" } },
+    { type: "link", attrs: { kind: "page", entryId: "missing", href: "/stale" } },
+    { type: "link", attrs: { kind: "asset", assetId: "deleted", href: "/stale" } },
+    { type: "link", attrs: { href: "https://example.com" } },
+    { type: "link", attrs: { href: "javascript:alert(1)" } },
+  ] }] }] };
+  const original = structuredClone(input);
+  const resolve = createRichTextAssetResolver(async (id) => id === "pdf" ? { downloadUrl: "https://cms.invalid/stable-pdf" } : null, async (id) => id === "page" ? { href: "/new" } : null);
+  const delivered = await resolve(input);
+  const marks = delivered.content[0].content[0].marks;
+  assert.deepEqual(marks.map((mark) => mark.attrs.href), ["/new", "https://cms.invalid/stable-pdf", null, null, "https://example.com", null]);
+  assert.equal(marks[0].attrs.target, "_blank");
+  assert.equal(marks[2].attrs.missing, true);
+  assert.deepEqual(input, original);
+});

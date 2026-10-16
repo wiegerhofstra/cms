@@ -18,7 +18,7 @@ export async function exportTenantIntegration(tenantSlug: string, origin: string
       .from(tenantRevalidationSettings).where(eq(tenantRevalidationSettings.tenantId, tenant.id)).limit(1);
 
     const models = await tx.select({
-      id: contentModels.id, name: contentModels.name, slug: contentModels.slug, status: contentModels.status,
+      id: contentModels.id, name: contentModels.name, slug: contentModels.slug, pageUrl: contentModels.pageUrl, status: contentModels.status,
     }).from(contentModels).where(eq(contentModels.tenantId, tenant.id)).orderBy(contentModels.slug);
     const fields = await tx.select().from(contentModelFields)
       .where(eq(contentModelFields.tenantId, tenant.id)).orderBy(contentModelFields.position, contentModelFields.key);

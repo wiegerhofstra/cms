@@ -10,8 +10,9 @@ export function referencedAssetIds(fields: { key: string; type: string }[], data
     while (pending.length) {
       const node = pending.pop();
       if (!node || typeof node !== "object" || Array.isArray(node)) continue;
-      const record = node as { type?: unknown; attrs?: { assetId?: unknown }; content?: unknown };
-      if (record.type === "asset") add(record.attrs?.assetId);
+      const record = node as { type?: unknown; attrs?: { assetId?: unknown }; content?: unknown; marks?: unknown };
+      if (record.type === "asset" || record.type === "link") add(record.attrs?.assetId);
+      if (Array.isArray(record.marks)) pending.push(...record.marks);
       if (Array.isArray(record.content)) pending.push(...record.content);
     }
   }

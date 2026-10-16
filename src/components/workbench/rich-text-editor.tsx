@@ -1,13 +1,12 @@
 "use client";
 
 import { Node, mergeAttributes, type JSONContent } from "@tiptap/core";
-import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TableKit } from "@tiptap/extension-table";
 import { Bold, Code, Heading2, Heading3, ImageIcon, Italic, Link2, List, ListOrdered, Minus, Quote, Redo2, Undo2, Unlink } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +15,13 @@ import type { AssetWithPreview } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { createEmptyRichTextDocument, isRichTextDocument, richTextFeaturesFromConfig, type RichTextFeatureConfig } from "@/lib/rich-text";
 
+import type { RichTextLink } from "@/lib/links";
+import { LinkDialog } from "./link-dialog";
+import { RichTextLinkExtension } from "./rich-text-link";
+
 type RichTextEditorProps = {
+  tenantSlug: string;
+  locale: string;
   id: string;
   value: unknown;
   config: Record<string, unknown>;
@@ -24,7 +29,8 @@ type RichTextEditorProps = {
   onChange: (value: JSONContent) => void;
 };
 
-export function RichTextEditor({ id, value, config, assets, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ tenantSlug, locale, id, value, config, assets, onChange }: RichTextEditorProps) {
+  const [linkDialog, setLinkDialog] = useState<{ from: number; to: number; text: string; editing: boolean; initial: RichTextLink } | null>(null);
   const features = richTextFeaturesFromConfig(config);
   const featureKey = Object.values(features).join(":");
   const readyAssets = assets.filter((asset) => asset.status === "ready");
@@ -66,14 +72,30 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
 
   function setLink() {
     if (!editor) return;
-    const previousUrl = editor.getAttributes("link").href as string | undefined;
-    const url = window.prompt("Link URL", previousUrl ?? "https://");
-    if (url === null) return;
-    if (!url.trim()) {
-      editor.chain().focus().extendMarkRange("link").unsetLink().run();
-      return;
+    editor.chain().focus().extendMarkRange("link").run();
+    const { from, to } = editor.state.selection;
+    const attrs = editor.getAttributes("link");
+    setLinkDialog({ from, to, text: editor.state.doc.textBetween(from, to, " "), editing: editor.isActive("link"), initial: {
+      kind: attrs.kind === "page" || attrs.kind === "asset" ? attrs.kind : "url",
+      href: attrs.href ?? null, entryId: attrs.entryId ?? null, assetId: attrs.assetId ?? null, target: attrs.target ?? null,
+    } });
+  }
+
+  function applyLink(link: RichTextLink, label: string) {
+    if (!editor || !linkDialog) return;
+    const chain = editor.chain().focus().setTextSelection({ from: linkDialog.from, to: linkDialog.to });
+    if (label === linkDialog.text && linkDialog.from !== linkDialog.to) {
+      chain.setMark("link", { ...link, rel: "noopener noreferrer" }).setMeta("preventAutolink", true).run();
+    } else {
+      chain.insertContent({ type: "text", text: label, marks: [{ type: "link", attrs: { ...link, rel: "noopener noreferrer" } }] }).setMeta("preventAutolink", true).run();
     }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run();
+    setLinkDialog(null);
+  }
+
+  function removeLink() {
+    if (!editor || !linkDialog) return;
+    editor.chain().focus().setTextSelection({ from: linkDialog.from, to: linkDialog.to }).unsetLink().run();
+    setLinkDialog(null);
   }
 
   function insertAsset(assetId: string) {
@@ -169,6 +191,7 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
         )}
       </div>
       <EditorContent editor={editor} />
+      {linkDialog && <LinkDialog tenantSlug={tenantSlug} locale={locale} initial={linkDialog.initial} text={linkDialog.text} editing={linkDialog.editing} onApply={applyLink} onRemove={removeLink} onClose={() => { setLinkDialog(null); editor.commands.focus(); }} />}
     </div>
   );
 }
@@ -199,7 +222,7 @@ function extensionsFor(features: RichTextFeatureConfig, assets: AssetWithPreview
       orderedList: features.lists ? undefined : false,
     }),
     TableKit,
-    ...(features.links ? [Link.configure({ openOnClick: false, autolink: true })] : []),
+    ...(features.links ? [RichTextLinkExtension.configure({ openOnClick: false, autolink: true, HTMLAttributes: { target: null, rel: "noopener noreferrer" } })] : []),
     ...(features.media ? [AssetNode.configure({ assets })] : []),
     Placeholder.configure({ placeholder: "Start writing..." }),
   ];

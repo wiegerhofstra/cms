@@ -32,6 +32,7 @@ import {
   updateManagedUser,
   updateModel,
 } from "@/lib/cms/workbench";
+import type { PageUrlConfig } from "@/lib/links";
 import type { EntryTranslations } from "@/lib/cms/types";
 import { createAccessToken, revokeAccessToken, updateAccessToken } from "@/modules/access-tokens/service";
 import type { AccessTokenPermission } from "@/modules/access-tokens/permissions";
@@ -117,7 +118,7 @@ export async function createModelAction(tenantSlug: string, input: { name: strin
   return result;
 }
 
-export async function updateModelAction(tenantSlug: string, modelId: string, input: { name?: string; status?: "active" | "archived"; kind?: "content" | "block" }) {
+export async function updateModelAction(tenantSlug: string, modelId: string, input: { name?: string; status?: "active" | "archived"; kind?: "content" | "block"; pageUrl?: PageUrlConfig | null }) {
   const result = await updateModel(modelId, input, tenantSlug);
   refresh();
   return result;

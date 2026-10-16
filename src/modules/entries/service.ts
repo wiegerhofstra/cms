@@ -8,6 +8,7 @@ import { isEmptyRichTextDocument } from "@/lib/rich-text";
 import { isLocalizedField, sanitizeTranslations, type TenantLocalization } from "@/modules/localization/locales";
 import { getTenantLocalization } from "@/modules/localization/tenant";
 import { allowedAssetTypes, describeAllowedAssetTypes, isAssetTypeAllowed } from "@/modules/uploads/asset-types";
+import { validatePagePaths, validateRichTextLinks } from "./links";
 import { isValidTimeValue } from "./time";
 
 type ContentModelFieldRow = typeof contentModelFields.$inferSelect;
@@ -78,6 +79,7 @@ export async function validateEntryData(
 ): Promise<void> {
   const fields = await getModelFields(db, tenantId, modelId);
   await validateFieldFormats(db, tenantId, modelId, fields, data, translations, excludeEntryId);
+  await validateRichTextLinks(db, tenantId, fields, data, translations, false, excludeEntryId);
 }
 
 /** Drops translations for languages the tenant does not use and for fields that are not translatable. */
@@ -105,6 +107,9 @@ export async function validateEntryDataForPublish(
 ): Promise<void> {
   const fields = await getModelFields(db, tenantId, modelId);
   await validateFieldFormats(db, tenantId, modelId, fields, data, translations, excludeEntryId);
+  await validateRichTextLinks(db, tenantId, fields, data, translations, true, excludeEntryId);
+  const current = excludeEntryId ? await getTenantEntry(db, tenantId, excludeEntryId) : null;
+  if (!current?.parentEntryId) await validatePagePaths(db, tenantId, { modelId, entry: { id: excludeEntryId, data, translations } });
 
   // Translations are optional: a required field only needs a value in the default language.
   for (const field of fields) {

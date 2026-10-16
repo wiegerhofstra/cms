@@ -1,4 +1,5 @@
 import type { EntryTranslations, TenantLocalization } from "@/modules/localization/locales";
+import type { PageUrlConfig } from "@/lib/links";
 
 export type { EntryTranslations, TenantLocalization };
 
@@ -75,6 +76,7 @@ export type ContentModel = {
   slug: string;
   status: ModelStatus;
   kind: ModelKind;
+  pageUrl: PageUrlConfig | null;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
