@@ -50,7 +50,8 @@ export function RichTextEditor({ id, value, config, assets, onChange }: RichText
           ),
         },
       },
-      onUpdate: ({ editor }) => onChange(editor.getJSON()),
+      // ProseMirror builds attrs as null-prototype objects, which server actions silently drop (losing heading levels and link hrefs), so pass plain JSON.
+      onUpdate: ({ editor }) => onChange(JSON.parse(JSON.stringify(editor.getJSON())) as JSONContent),
     },
     [assetKey, featureKey],
   );
