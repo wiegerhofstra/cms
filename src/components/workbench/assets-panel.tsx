@@ -65,7 +65,7 @@ export function AssetsPanel({
               <CardDescription>Browse tenant-scoped assets, preview images, and delete files from storage.</CardDescription>
             </div>
             <Button asChild>
-              <Link href={`${appPath}/assets/new`}><Upload data-icon="inline-start" /> Upload asset</Link>
+              <Link href={`${appPath}/assets/new`}><Upload data-icon="inline-start" /> Upload assets</Link>
             </Button>
           </div>
         </CardHeader>
@@ -331,43 +331,103 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+type AssetUpload = {
+  file: File;
+  status: "waiting" | "uploading" | "uploaded" | "failed";
+  error?: string;
+};
+
 export function AssetCreatePanel({ tenantSlug }: { tenantSlug: string }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [file, setFile] = useState<File | null>(null);
+  const [uploads, setUploads] = useState<AssetUpload[]>([]);
   const appPath = `/app/${tenantSlug}`;
+  const remaining = uploads.filter((upload) => upload.status !== "uploaded").length;
+  const uploaded = uploads.length - remaining;
+  const hasFailures = uploads.some((upload) => upload.status === "failed");
 
-  function run(action: () => Promise<void>, success: string) {
+  function uploadFiles() {
+    if (isPending || remaining === 0) return;
+
     startTransition(async () => {
-      try {
-        await action();
-        toast.success(success);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Action failed");
+      let succeeded = 0;
+      let failed = 0;
+
+      function updateUpload(index: number, update: Partial<AssetUpload>) {
+        setUploads((current) => current.map((upload, i) => i === index ? { ...upload, ...update } : upload));
+      }
+
+      for (const [index, upload] of uploads.entries()) {
+        if (upload.status === "uploaded") continue;
+
+        updateUpload(index, { status: "uploading", error: undefined });
+        try {
+          await uploadAsset(tenantSlug, upload.file);
+          updateUpload(index, { status: "uploaded" });
+          succeeded += 1;
+        } catch (error) {
+          updateUpload(index, { status: "failed", error: error instanceof Error ? error.message : "Upload failed" });
+          failed += 1;
+        }
+      }
+
+      if (succeeded > 0) toast.success(`${succeeded} ${succeeded === 1 ? "asset" : "assets"} uploaded`);
+      if (failed > 0) {
+        toast.error(`${failed} ${failed === 1 ? "file" : "files"} failed to upload. Retry the failed files below.`);
+      } else {
+        router.push(`${appPath}/assets`);
+        router.refresh();
       }
     });
-  }
-
-  async function uploadFile() {
-    if (!file) return;
-    await uploadAsset(tenantSlug, file);
-    setFile(null);
-    router.push(`${appPath}/assets`);
-    router.refresh();
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Upload /> Upload asset</CardTitle>
-        <CardDescription>Uses presign, direct S3 POST, then upload completion.</CardDescription>
+        <CardTitle className="flex items-center gap-2"><Upload /> Upload assets</CardTitle>
+        <CardDescription>Select one or more files to upload to your asset library.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <Input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+        <Field>
+          <FieldLabel htmlFor="asset-files">Files</FieldLabel>
+          <Input
+            id="asset-files"
+            type="file"
+            multiple
+            disabled={isPending}
+            onChange={(event) => setUploads(Array.from(event.target.files ?? [], (file) => ({ file, status: "waiting" })))}
+          />
+        </Field>
+        {uploads.length > 0 ? (
+          <div className="grid gap-2">
+            <p role="status" className="text-sm text-muted-foreground">
+              {isPending || uploaded > 0 || hasFailures
+                ? `${uploaded} of ${uploads.length} files uploaded${isPending ? ". Uploading…" : "."}`
+                : `${uploads.length} ${uploads.length === 1 ? "file" : "files"} selected`}
+            </p>
+            <ul className="max-h-80 divide-y overflow-y-auto rounded-lg border">
+              {uploads.map((upload, index) => (
+                <li key={index} className="flex items-start justify-between gap-3 p-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="break-all font-medium">{upload.file.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatBytes(upload.file.size)}</p>
+                    {upload.error ? <p className="mt-1 text-destructive">{upload.error}</p> : null}
+                  </div>
+                  <Badge variant={upload.status === "failed" ? "destructive" : "secondary"}>
+                    {upload.status === "waiting" ? "Waiting" : upload.status === "uploading" ? "Uploading…" : upload.status === "uploaded" ? "Uploaded" : "Failed"}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button disabled={isPending || !file} onClick={() => run(uploadFile, "Asset uploaded")}><Upload data-icon="inline-start" /> Upload</Button>
-          <Button asChild variant="outline">
-            <Link href={`${appPath}/assets`}>Cancel</Link>
+          <Button disabled={isPending || remaining === 0} onClick={uploadFiles}>
+            <Upload data-icon="inline-start" />
+            {isPending ? "Uploading…" : hasFailures ? "Retry failed files" : remaining > 0 ? `Upload ${remaining} ${remaining === 1 ? "file" : "files"}` : "Upload"}
+          </Button>
+          <Button variant="outline" disabled={isPending} onClick={() => router.push(`${appPath}/assets`)}>
+            {uploaded > 0 ? "Back to assets" : "Cancel"}
           </Button>
         </div>
       </CardContent>
