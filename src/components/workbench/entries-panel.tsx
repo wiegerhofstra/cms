@@ -275,6 +275,7 @@ export function EntryCreatePanel(props: {
   const [data, setData] = useState(defaultData);
   const [translations, setTranslations] = useState<EntryTranslations>({});
   const [jsonOpen, setJsonOpen] = useState(false);
+  const [formVersion, setFormVersion] = useState(0);
   const isDirty = useMemo(() => entryDataSnapshot(props.fields, data, translations) !== entryDataSnapshot(props.fields, defaultData), [props.fields, data, translations, defaultData]);
   const missingFields = missingRequiredFields(props.fields, data);
   const canCreate = !isPending && props.model.status === "active" && !missingFields.length;
@@ -287,6 +288,11 @@ export function EntryCreatePanel(props: {
     startTransition(async () => {
       try {
         const response = await createEntryAction(props.tenantSlug, props.model.id, normalizeEntryData(props.fields, data), normalizeTranslations(props.fields, translations));
+        // Activity preserves this page on navigation, so the next entry needs a fresh draft.
+        setData(createDefaultEntryData(props.fields));
+        setTranslations({});
+        setJsonOpen(false);
+        setFormVersion((version) => version + 1);
         router.push(`${appPath}/entries/${props.model.id}/${response.entry.id}`);
         router.refresh();
         toast.success("Entry created");
@@ -325,7 +331,7 @@ export function EntryCreatePanel(props: {
         </div>
       </EditorBar>
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-        <EntryForm tenantSlug={props.tenantSlug} fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
+        <EntryForm key={formVersion} tenantSlug={props.tenantSlug} fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
       </div>
       <EntryJsonDialog open={jsonOpen} onOpenChange={setJsonOpen} data={data} onApply={setData} />
     </EditorCard>
