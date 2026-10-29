@@ -1,7 +1,16 @@
 import { LoginForm } from "@/components/auth/login-client";
+import { SignedOutOnly } from "@/components/auth/signed-out-only";
 import { FanOutDemo } from "@/components/landing/fan-out-demo";
 
 export default function Home() {
+  return (
+    <SignedOutOnly>
+      <HomeContent />
+    </SignedOutOnly>
+  );
+}
+
+function HomeContent() {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="mx-auto w-full max-w-6xl px-5 py-5 sm:px-8">
