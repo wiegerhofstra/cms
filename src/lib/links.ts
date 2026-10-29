@@ -6,21 +6,25 @@ export const pageUrlSchema = z.object({
     value === "/" || /^\/(?:[a-z0-9_-]+|\{slug\}|\{locale\})(?:\/(?:[a-z0-9_-]+|\{slug\}|\{locale\}))*$/.test(value),
   "Use a path such as /news/{slug}, /{locale}/{slug}, or /"),
   slugField: z.string().regex(/^[a-z][a-z0-9_]*$/).nullable(),
+  hierarchy: z.boolean().optional(),
 }).refine((value) => !value.pattern.includes("{slug}") || Boolean(value.slugField), {
   message: "Choose a slug field for this URL pattern", path: ["slugField"],
 }).refine((value) => value.pattern.split("{slug}").length <= 2 && value.pattern.split("{locale}").length <= 2, {
   message: "Use each placeholder only once", path: ["pattern"],
+}).refine((value) => !value.hierarchy || value.pattern.endsWith("/{slug}"), {
+  message: "Parent pages require a URL pattern ending in /{slug}", path: ["pattern"],
 });
 
 export type PageUrlConfig = z.infer<typeof pageUrlSchema>;
 
-export function resolvePagePath(config: PageUrlConfig | null | undefined, data: Record<string, unknown>, locale: string): string | null {
+export function resolvePagePath(config: PageUrlConfig | null | undefined, data: Record<string, unknown>, locale: string, ancestorSlugs: string[] = []): string | null {
   if (!config || !pageUrlSchema.safeParse(config).success) return null;
   let path = config.pattern;
   if (path.includes("{slug}")) {
     const slug = config.slugField ? data[config.slugField] : undefined;
     if (typeof slug !== "string" || !/^[a-z0-9_-]+$/.test(slug)) return null;
-    path = path.replace("{slug}", slug);
+    if (ancestorSlugs.some((segment) => !/^[a-z0-9_-]+$/.test(segment))) return null;
+    path = path.replace("{slug}", [...(config.hierarchy ? ancestorSlugs : []), slug].join("/"));
   }
   return path.replace("{locale}", encodeURIComponent(locale));
 }

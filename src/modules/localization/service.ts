@@ -9,6 +9,8 @@ import { getCmsContext, requireAdmin } from "@/lib/cms/context";
 import { CmsError } from "@/lib/cms/errors";
 import { isLocalizedField, rebaseEntryLocalization, type TenantLocalization } from "./locales";
 import { getTenantLocalization } from "./tenant";
+import { lockPagePaths } from "@/modules/entries/links";
+import { loadPageGraph, publishedPagePaths, syncPagePaths } from "@/modules/entries/page-paths";
 import { localizationSettingsSchema } from "./validation";
 
 export async function getLocalizationSettingsForAdmin(tenantId: string): Promise<TenantLocalization> {
@@ -23,6 +25,8 @@ export async function saveLocalizationSettings(tenantId: string, input: unknown)
   const next: TenantLocalization = parsed.data;
 
   return db.transaction(async (tx) => {
+    await lockPagePaths(tx, tenantId);
+    const before = publishedPagePaths(await loadPageGraph(tx, tenantId));
     // Lock the tenant so concurrent saves rebase entries from the settings they replace.
     const [previous] = await tx
       .select({ defaultLocale: tenants.defaultLocale, locales: tenants.locales })
@@ -34,14 +38,14 @@ export async function saveLocalizationSettings(tenantId: string, input: unknown)
     await tx.update(tenants).set({ ...next, updatedAt: new Date() }).where(eq(tenants.id, tenantId));
 
     const removedLocale = previous.locales.some((locale) => !next.locales.includes(locale));
-    if (previous.defaultLocale === next.defaultLocale && !removedLocale) return next;
+    if (previous.defaultLocale === next.defaultLocale && !removedLocale) { await syncPagePaths(tx, tenantId, before); return next; }
 
     const localizedFields = (await tx
       .select({ modelId: contentModelFields.modelId, key: contentModelFields.key, type: contentModelFields.type, localized: contentModelFields.localized })
       .from(contentModelFields)
       .where(and(eq(contentModelFields.tenantId, tenantId), eq(contentModelFields.localized, true))))
       .filter(isLocalizedField);
-    if (!localizedFields.length) return next;
+    if (!localizedFields.length) { await syncPagePaths(tx, tenantId, before); return next; }
 
     const keysByModel = new Map<string, string[]>();
     for (const field of localizedFields) keysByModel.set(field.modelId, [...(keysByModel.get(field.modelId) ?? []), field.key]);
@@ -58,6 +62,7 @@ export async function saveLocalizationSettings(tenantId: string, input: unknown)
       await tx.update(contentEntries).set(rebased).where(eq(contentEntries.id, entry.id));
     }
 
+    await syncPagePaths(tx, tenantId, before);
     return next;
   });
 }

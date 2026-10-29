@@ -17,12 +17,13 @@ export function PageUrlSettings({ tenantSlug, model, fields, locale }: { tenantS
   const [enabled, setEnabled] = useState(Boolean(model.pageUrl));
   const [pattern, setPattern] = useState(model.pageUrl?.pattern ?? "/{slug}");
   const [slugField, setSlugField] = useState(model.pageUrl?.slugField ?? fields.find((field) => field.type === "slug")?.key ?? "");
+  const [hierarchy, setHierarchy] = useState(model.pageUrl?.hierarchy ?? false);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const needsSlug = pattern.includes("{slug}");
-  const config = enabled ? { pattern: pattern.trim(), slugField: needsSlug ? slugField || null : null } : null;
+  const config = enabled ? { pattern: pattern.trim(), slugField: needsSlug ? slugField || null : null, ...(hierarchy ? { hierarchy: true } : {}) } : null;
   const preview = resolvePagePath(config, { [slugField]: "example-page" }, locale);
-  const dirty = JSON.stringify(config) !== JSON.stringify(model.pageUrl);
+  const dirty = enabled !== Boolean(model.pageUrl) || (enabled && (config?.pattern !== model.pageUrl?.pattern || config?.slugField !== model.pageUrl?.slugField || hierarchy !== Boolean(model.pageUrl?.hierarchy)));
 
   function save() {
     const parsed = pageUrlSchema.nullable().safeParse(config);
@@ -56,8 +57,15 @@ export function PageUrlSettings({ tenantSlug, model, fields, locale }: { tenantS
             <SelectTrigger id="page-url-slug" className="w-full"><SelectValue placeholder="Choose a slug field" /></SelectTrigger>
             <SelectContent>{fields.filter((field) => field.type === "slug").map((field) => <SelectItem key={field.id} value={field.key}>{field.label}</SelectItem>)}</SelectContent>
           </Select>
-          <FieldDescription>The field must have Required and Unique value enabled.</FieldDescription>
+          <FieldDescription>{hierarchy ? "The field must be Required. Slugs are unique among sibling pages, even when Unique value is enabled." : "The field must have Required and Unique value enabled."}</FieldDescription>
         </Field>}
+        <Field orientation="horizontal" className="sm:col-span-2">
+          <Checkbox id="page-url-hierarchy" checked={hierarchy} onCheckedChange={(value) => setHierarchy(value === true)} />
+          <div>
+            <FieldLabel htmlFor="page-url-hierarchy">Allow parent pages</FieldLabel>
+            <FieldDescription>Choose a parent from this model when editing a page. Parent slugs become part of its URL. The pattern must end in /{"{slug}"}.</FieldDescription>
+          </div>
+        </Field>
         <div className="sm:col-span-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">
           <span className="text-muted-foreground">Example URL </span><span className="break-all font-medium">{preview ?? "Complete the settings above"}</span>
           <p className="mt-1 text-xs text-muted-foreground">Your website needs a matching route.{!needsSlug ? " A fixed URL can belong to only one published entry." : ""}</p>

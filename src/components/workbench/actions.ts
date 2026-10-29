@@ -167,8 +167,8 @@ export async function deleteFieldAction(tenantSlug: string, modelId: string, fie
   return result;
 }
 
-export async function createEntryAction(tenantSlug: string, modelId: string, data: Record<string, unknown>, translations?: EntryTranslations) {
-  const result = await createEntry(modelId, data, translations, tenantSlug);
+export async function createEntryAction(tenantSlug: string, modelId: string, data: Record<string, unknown>, translations?: EntryTranslations, pageParentId?: string | null) {
+  const result = await createEntry(modelId, data, translations, tenantSlug, pageParentId);
   refresh();
   return result;
 }
@@ -178,8 +178,8 @@ export async function searchEntriesAction(tenantSlug: string, modelId: string, q
   return result.entries;
 }
 
-export async function updateEntryAction(tenantSlug: string, entryId: string, data: Record<string, unknown>, translations?: EntryTranslations) {
-  const result = await updateEntry(entryId, data, translations, tenantSlug);
+export async function updateEntryAction(tenantSlug: string, entryId: string, data: Record<string, unknown>, translations?: EntryTranslations, pageParentId?: string | null) {
+  const result = await updateEntry(entryId, data, translations, tenantSlug, pageParentId);
   refresh();
   return result;
 }

@@ -87,10 +87,10 @@ test("schemas reject wrong envelopes, wrong model targets and malformed delivere
   assert.equal(validate(sample), false);
 });
 
-test("OpenAPI covers all five GET operations with resolvable schemas, security, limits and matching examples", () => {
+test("OpenAPI covers all six GET operations with resolvable schemas, security, limits and matching examples", () => {
   const spec = JSON.parse(files["openapi.json"]);
   assert.equal(spec.openapi, "3.1.0");
-  assert.equal(Object.keys(spec.paths).length, 5);
+  assert.equal(Object.keys(spec.paths).length, 6);
   assert.equal(JSON.stringify(spec).includes("#/$defs/"), false);
   for (const [route, item] of Object.entries(spec.paths)) {
     const op = item.get;
@@ -216,6 +216,31 @@ test("client surfaces API errors and malformed responses, rejects invalid limits
     } });
     await assert.rejects(async () => { for await (const entry of repeated.iterateEntries("article")) void entry; }, /repeated/);
     assert.equal(calls, 2);
+  });
+});
+
+test("full-path client returns pages and redirects and preserves locale, auth and uncached requests", async () => {
+  await withClient(async ({ createCmsClient, CmsApiError }) => {
+    const requests = [];
+    let result = { kind: "page", modelSlug: "article", entry: examples.byModel.article.expanded.data };
+    const client = createCmsClient({ origin: fixture.origin, tenantSlug: "example", token: "test-token", fetch: async (url, init) => {
+      requests.push({ url, init });
+      return Response.json({ data: result, meta: { maxDepth: 2, locale: "nl" } });
+    } });
+    const signal = new AbortController().signal;
+    assert.equal((await client.resolvePage("/nl/services/contact", { locale: "nl", maxDepth: 2, signal })).data.kind, "page");
+    assert.equal(requests[0].url.pathname, "/api/content/example/resolve");
+    assert.equal(requests[0].url.searchParams.get("path"), "/nl/services/contact");
+    assert.equal(requests[0].url.searchParams.get("locale"), "nl");
+    assert.equal(requests[0].init.signal, signal);
+    assert.equal(requests[0].init.cache, "no-store");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer test-token");
+    result = { kind: "redirect", location: "/nl/care/contact", status: 308 };
+    assert.deepEqual((await client.resolvePage("/nl/services/contact")).data, result);
+    for (const location of ["//evil.invalid", "https://evil.invalid", "/\\evil.invalid"]) {
+      result = { kind: "redirect", location, status: 308 };
+      await assert.rejects(client.resolvePage("/old"), (error) => error instanceof CmsApiError && error.code === "INVALID_RESPONSE");
+    }
   });
 });
 

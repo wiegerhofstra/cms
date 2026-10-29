@@ -32,6 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AssetWithPreview, ContentEntry, ContentField, ContentModel, EntryRevision, EntryTranslations, TenantLocalization } from "@/lib/cms/types";
 import { cn } from "@/lib/utils";
 import { createEntryAction, deleteEntryAction, publishEntryAction, searchEntriesAction, unpublishEntryAction, updateEntryAction } from "./actions";
+import { PageHierarchyFields } from "./page-hierarchy-fields";
 import { EntryForm, EntryJsonDialog } from "./entry-form";
 import { EntryStatusLabel, RelativeTime, StatusDot } from "./entry-status";
 import { usePageTitle } from "./page-title";
@@ -141,12 +142,13 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
   const savedData = useMemo(() => createDefaultEntryData(fields, entry.data), [fields, entry.data]);
   const [data, setData] = useState(savedData);
   const [translations, setTranslations] = useState<EntryTranslations>(entry.translations);
+  const [pageParentId, setPageParentId] = useState(entry.pageParentId);
   const [jsonOpen, setJsonOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const titleField = fields.find((field) => field.isTitle) ?? null;
   const isDirty = useMemo(
-    () => entryDataSnapshot(fields, data, translations) !== entryDataSnapshot(fields, savedData, entry.translations),
-    [fields, data, translations, savedData, entry.translations],
+    () => pageParentId !== entry.pageParentId || entryDataSnapshot(fields, data, translations) !== entryDataSnapshot(fields, savedData, entry.translations),
+    [fields, data, translations, savedData, entry.translations, pageParentId, entry.pageParentId],
   );
   const missingFields = missingRequiredFields(fields, data);
   const canSave = !isPending && isDirty && !missingFields.length;
@@ -171,12 +173,12 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
 
   function save() {
     if (!canSave) return;
-    run(() => updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data), normalizeTranslations(fields, translations)), "Entry saved");
+    run(() => updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data), normalizeTranslations(fields, translations), pageParentId), "Entry saved");
   }
 
   function publish() {
     run(async () => {
-      if (isDirty) await updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data), normalizeTranslations(fields, translations));
+      if (isDirty) await updateEntryAction(tenantSlug, entry.id, normalizeEntryData(fields, data), normalizeTranslations(fields, translations), pageParentId);
       await publishEntryAction(tenantSlug, entry.id);
     }, isDirty ? "Entry saved and published" : "Entry published");
   }
@@ -234,7 +236,8 @@ export function EntryEditorPanel({ tenantSlug, model, assets, fields, componentR
             <TabsTrigger value="revisions">Revisions</TabsTrigger>
           </TabsList>
           <TabsContent value="content">
-            <EntryForm tenantSlug={tenantSlug} fields={fields} assets={assets} componentReferences={componentReferences} localization={localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
+            {model?.pageUrl?.hierarchy && !entry.parentEntryId && <PageHierarchyFields tenantSlug={tenantSlug} model={model} fields={fields} entryId={entry.id} published={isPublished} data={data} translations={translations} localization={localization} pageParentId={pageParentId} onChange={setPageParentId} />}
+            <EntryForm siblingSlugField={model?.pageUrl?.hierarchy ? model.pageUrl.slugField : null} tenantSlug={tenantSlug} fields={fields} assets={assets} componentReferences={componentReferences} localization={localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
           </TabsContent>
           <TabsContent value="revisions">
             <RevisionList revisions={revisions} />
@@ -274,9 +277,10 @@ export function EntryCreatePanel(props: {
   const defaultData = useMemo(() => createDefaultEntryData(props.fields), [props.fields]);
   const [data, setData] = useState(defaultData);
   const [translations, setTranslations] = useState<EntryTranslations>({});
+  const [pageParentId, setPageParentId] = useState<string | null>(null);
   const [jsonOpen, setJsonOpen] = useState(false);
   const [formVersion, setFormVersion] = useState(0);
-  const isDirty = useMemo(() => entryDataSnapshot(props.fields, data, translations) !== entryDataSnapshot(props.fields, defaultData), [props.fields, data, translations, defaultData]);
+  const isDirty = useMemo(() => pageParentId !== null || entryDataSnapshot(props.fields, data, translations) !== entryDataSnapshot(props.fields, defaultData), [props.fields, data, translations, defaultData, pageParentId]);
   const missingFields = missingRequiredFields(props.fields, data);
   const canCreate = !isPending && props.model.status === "active" && !missingFields.length;
   const appPath = `/app/${props.tenantSlug}`;
@@ -287,10 +291,11 @@ export function EntryCreatePanel(props: {
     if (!canCreate) return;
     startTransition(async () => {
       try {
-        const response = await createEntryAction(props.tenantSlug, props.model.id, normalizeEntryData(props.fields, data), normalizeTranslations(props.fields, translations));
+        const response = await createEntryAction(props.tenantSlug, props.model.id, normalizeEntryData(props.fields, data), normalizeTranslations(props.fields, translations), pageParentId);
         // Activity preserves this page on navigation, so the next entry needs a fresh draft.
         setData(createDefaultEntryData(props.fields));
         setTranslations({});
+        setPageParentId(null);
         setJsonOpen(false);
         setFormVersion((version) => version + 1);
         router.push(`${appPath}/entries/${props.model.id}/${response.entry.id}`);
@@ -331,7 +336,8 @@ export function EntryCreatePanel(props: {
         </div>
       </EditorBar>
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
-        <EntryForm key={formVersion} tenantSlug={props.tenantSlug} fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
+        {props.model.pageUrl?.hierarchy && <PageHierarchyFields key={`hierarchy-${formVersion}`} tenantSlug={props.tenantSlug} model={props.model} fields={props.fields} data={data} translations={translations} localization={props.localization} pageParentId={pageParentId} onChange={setPageParentId} />}
+        <EntryForm siblingSlugField={props.model.pageUrl?.hierarchy ? props.model.pageUrl.slugField : null} key={formVersion} tenantSlug={props.tenantSlug} fields={props.fields} assets={props.assets} componentReferences={props.componentReferences} localization={props.localization} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
       </div>
       <EntryJsonDialog open={jsonOpen} onOpenChange={setJsonOpen} data={data} onApply={setData} />
     </EditorCard>
@@ -381,6 +387,7 @@ function EntryList({ appPath, modelId, fields, entries, query, activeEntryId }: 
       {entries.map((entry) => {
         const isActive = entry.id === activeEntryId;
         const slug = slugField ? stringValue(entry.data[slugField.key]) : "";
+        const path = entry.url === undefined ? (slug ? `/${slug}` : null) : entry.url;
         return (
           <li key={entry.id}>
             <Link
@@ -395,7 +402,7 @@ function EntryList({ appPath, modelId, fields, entries, query, activeEntryId }: 
               </span>
               <span className="flex min-w-0 items-center gap-2 pl-4 text-xs text-muted-foreground">
                 {entry.status === "draft" ? <span className="shrink-0 font-medium text-status-draft">Draft</span> : null}
-                {slug ? <span className="truncate font-mono">/{slug}</span> : null}
+                {path ? <span className="truncate font-mono" title={path}>{path}</span> : null}
               </span>
             </Link>
           </li>

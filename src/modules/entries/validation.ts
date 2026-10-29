@@ -6,11 +6,13 @@ const translationsSchema = z.record(z.string(), z.record(z.string(), z.unknown()
 
 export const entryDataSchema = z.object({
   data: z.record(z.string(), z.unknown()).optional().default({}),
+  pageParentId: z.uuid().nullable().optional(),
   translations: translationsSchema.optional().default({}),
 });
 
 export const updateEntrySchema = z.object({
   data: z.record(z.string(), z.unknown()),
+  pageParentId: z.uuid().nullable().optional(),
   /** Omit to keep the entry's current translations. */
   translations: translationsSchema.optional(),
 });

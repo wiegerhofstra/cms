@@ -31,7 +31,9 @@ export async function createEntryRevision(
     .from(entryRevisions)
     .where(and(eq(entryRevisions.tenantId, input.tenantId), eq(entryRevisions.entryId, input.entryId)));
 
+  const [entry] = await tx.select({ pageParentId: contentEntries.pageParentId }).from(contentEntries).where(and(eq(contentEntries.tenantId, input.tenantId), eq(contentEntries.id, input.entryId)));
   await tx.insert(entryRevisions).values({
+    pageParentId: entry?.pageParentId ?? null,
     tenantId: input.tenantId,
     entryId: input.entryId,
     version: (versionRow?.value ?? 0) + 1,
@@ -218,9 +220,12 @@ async function validateSlugFields(
   excludeEntryId?: string,
 ): Promise<void> {
   validateSlugFormats(fields, data);
+  const [model] = await db.select({ pageUrl: contentModels.pageUrl }).from(contentModels).where(and(eq(contentModels.tenantId, tenantId), eq(contentModels.id, modelId))).limit(1);
 
   for (const field of fields) {
     if (field.type !== "slug" || field.config.unique !== true) continue;
+    // The page-tree validator enforces sibling uniqueness for the routing slug.
+    if (model?.pageUrl?.hierarchy && model.pageUrl.slugField === field.key) continue;
 
     // A translated slug must be unique among the values entries show in that language, including fallbacks to the default.
     const locales = isLocalizedField(field) ? localization.locales : [localization.defaultLocale];

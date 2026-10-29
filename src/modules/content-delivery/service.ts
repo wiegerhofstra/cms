@@ -4,9 +4,10 @@ import { and, desc, eq, getTableColumns, inArray, isNull, sql } from "drizzle-or
 import { z } from "zod";
 
 import { db } from "@/db";
-import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels } from "@/db/schema";
+import { assets, contentEntries, contentModelFields, contentModelFieldTargets, contentModels, pagePathHistory } from "@/db/schema";
 import { CmsError } from "@/lib/cms/errors";
-import { resolvePagePath } from "@/lib/links";
+import { resolveEntryPagePath } from "@/lib/page-hierarchy";
+import { loadPageGraph } from "@/modules/entries/page-paths";
 import { assetDownloadUrl } from "@/modules/uploads/download";
 import { presignRead } from "@/lib/storage/s3";
 import { canonicalLocale, isLocalizedField, localizeEntryData, type TenantLocalization } from "@/modules/localization/locales";
@@ -208,18 +209,10 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
   const assetsById = new Map<string, Promise<unknown>>();
   let componentReferenceCount = 0;
   let resolvedAssetCount = 0;
-  const modelsById = new Map<string, Promise<typeof contentModels.$inferSelect | null>>();
+  let pageGraph: ReturnType<typeof loadPageGraph> | undefined;
+  const graph = () => pageGraph ??= loadPageGraph(db, tenantId);
   const pagesById = new Map<string, Promise<{ href: string } | null>>();
   const resolveRichTextAssets = createRichTextAssetResolver(deliveryAsset, deliveryPage);
-
-  function model(id: string) {
-    let result = modelsById.get(id);
-    if (!result) {
-      result = db.select().from(contentModels).where(and(eq(contentModels.tenantId, tenantId), eq(contentModels.id, id))).limit(1).then((rows) => rows[0] ?? null);
-      modelsById.set(id, result);
-    }
-    return result;
-  }
 
   async function deliveryPage(id: string): Promise<{ href: string } | null> {
     if (!z.uuid().safeParse(id).success) return null;
@@ -229,9 +222,7 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
       result = (async () => {
         const entry = await publishedEntry(id);
         if (!entry || entry.parentEntryId) return null;
-        const target = await model(entry.modelId);
-        const data = localizeEntryData(await fields(entry.modelId), entry.data, entry.translations, locale, localization);
-        const href = resolvePagePath(target?.pageUrl, data, locale);
+        const href = resolveEntryPagePath(await graph(), entry.id, locale, true);
         return href ? { href } : null;
       })();
       pagesById.set(id, result);
@@ -314,7 +305,8 @@ function createEntryResolver(tenantId: string, maxDepth: number, { locale, local
     return {
       id: entry.id,
       modelId: entry.modelId,
-      url: entry.parentEntryId ? null : resolvePagePath((await model(entry.modelId))?.pageUrl, data, locale),
+      url: entry.parentEntryId ? null : resolveEntryPagePath(await graph(), entry.id, locale, true),
+      pageParentId: entry.pageParentId,
       status: entry.status,
       data: resolvedData,
       publishedAt: entry.publishedAt?.toISOString() ?? null,
@@ -420,4 +412,24 @@ function decodeCursor(value: string): { createdAt: string; id: string } {
   } catch {
     throw new CmsError("BAD_REQUEST", "cursor is invalid");
   }
+}
+
+/** Resolve the complete URL, which stays unambiguous when branches reuse a slug. */
+export async function resolvePublishedPage(input: { tenantId: string; path: string; locale: string | null; maxDepth: number }) {
+  if (input.path.length > 2000 || !/^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/.test(input.path)) {
+    throw new CmsError("BAD_REQUEST", "path must be an absolute website path without a query, fragment, or trailing slash (except /)");
+  }
+  const resolvedLocale = await resolveDeliveryLocale(input.tenantId, input.locale);
+  const { locale } = resolvedLocale;
+  const graph = await loadPageGraph(db, input.tenantId);
+  for (const entry of graph.entries.values()) {
+    if (resolveEntryPagePath(graph, entry.id, locale, true) !== input.path) continue;
+    const [model] = await db.select({ slug: contentModels.slug }).from(contentModels).where(and(eq(contentModels.tenantId, input.tenantId), eq(contentModels.id, entry.modelId)));
+    const result = await getPublishedEntry({ ...input, locale, modelSlug: model.slug, entryId: entry.id });
+    return { locale, result: { kind: "page" as const, modelSlug: model.slug, entry: result.entry } };
+  }
+  const [old] = await db.select().from(pagePathHistory).where(and(eq(pagePathHistory.tenantId, input.tenantId), eq(pagePathHistory.locale, locale), eq(pagePathHistory.path, input.path))).limit(1);
+  const location = old ? resolveEntryPagePath(graph, old.entryId, locale, true) : null;
+  if (location && location !== input.path) return { locale, result: { kind: "redirect" as const, location, status: 308 as const } };
+  throw new CmsError("NOT_FOUND", "Published page was not found");
 }

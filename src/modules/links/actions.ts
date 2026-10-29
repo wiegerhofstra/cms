@@ -6,10 +6,12 @@ import { db } from "@/db";
 import { assets, contentEntries, contentModelFields, contentModels } from "@/db/schema";
 import { requireTenantContext } from "@/lib/cms/context";
 import { CmsError } from "@/lib/cms/errors";
-import { resolvePagePath, type LinkDestination } from "@/lib/links";
+import { type LinkDestination } from "@/lib/links";
 import { richTextPlainText } from "@/lib/rich-text";
 import { localizeEntryData } from "@/modules/localization/locales";
 import { getTenantLocalization } from "@/modules/localization/tenant";
+import { loadPageGraph } from "@/modules/entries/page-paths";
+import { resolveEntryPagePath } from "@/lib/page-hierarchy";
 
 const searchSchema = z.object({
   kind: z.enum(["page", "asset"]), query: z.string().trim().max(200).default(""),
@@ -43,11 +45,12 @@ export async function searchLinkDestinations(tenantSlug: string, input: z.input<
       !id && query ? or(ilike(contentModels.name, `%${query}%`), sql`${contentEntries.data}::text ilike ${`%${query}%`}`, sql`${contentEntries.translations}::text ilike ${`%${query}%`}`) : undefined,
     )).orderBy(asc(contentModels.name), asc(contentEntries.id)).limit(limit + 1).offset(page * limit);
   const fields = await db.select().from(contentModelFields).where(eq(contentModelFields.tenantId, tenantId));
+  const graph = await loadPageGraph(db, tenantId);
   return { hasMore: rows.length > limit, items: rows.slice(0, limit).map(({ entry, model }) => {
     const modelFields = fields.filter((field) => field.modelId === model.id);
     const data = localizeEntryData(modelFields, entry.data, entry.translations, locale, localization);
     const titleField = modelFields.find((field) => field.isTitle);
-    const href = resolvePagePath(model.pageUrl, data, locale);
+    const href = resolveEntryPagePath(graph, entry.id, locale);
     return { id: entry.id, kind, title: (titleField ? richTextPlainText(data[titleField.key]) : "") || "Untitled page", status: entry.status, href, detail: `${model.name} · ${href ?? "Missing slug"}` };
   }) };
 }

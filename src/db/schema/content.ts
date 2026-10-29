@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
@@ -123,6 +124,8 @@ export const contentEntries = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     parentEntryId: uuid("parent_entry_id"),
+    /** Page navigation hierarchy, independent of embedded component ownership. */
+    pageParentId: uuid("page_parent_id").references((): AnyPgColumn => contentEntries.id, { onDelete: "restrict" }),
     parentFieldId: uuid("parent_field_id").references(() => contentModelFields.id, { onDelete: "set null" }),
     position: integer("position"),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
@@ -132,6 +135,7 @@ export const contentEntries = pgTable(
   },
   (table) => [
     index("content_entries_tenant_id_idx").on(table.tenantId),
+    index("content_entries_page_parent_idx").on(table.tenantId, table.pageParentId),
     index("content_entries_tenant_model_status_idx").on(table.tenantId, table.modelId, table.status),
     index("content_entries_parent_position_idx").on(
       table.tenantId,
@@ -141,6 +145,19 @@ export const contentEntries = pgTable(
     ),
   ],
 );
+
+/** Historical paths remain reserved for their original page, even while unpublished. */
+export const pagePathHistory = pgTable("page_path_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  locale: text("locale").notNull(),
+  path: text("path").notNull(),
+  entryId: uuid("entry_id").notNull().references(() => contentEntries.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("page_path_history_tenant_locale_path_unique").on(table.tenantId, table.locale, table.path),
+  index("page_path_history_entry_idx").on(table.tenantId, table.entryId),
+]);
 
 export const entryRevisions = pgTable(
   "entry_revisions",
@@ -153,6 +170,7 @@ export const entryRevisions = pgTable(
       .notNull()
       .references(() => contentEntries.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
+    pageParentId: uuid("page_parent_id"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
     translations: jsonb("translations").$type<EntryTranslations>().notNull().default({}),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),

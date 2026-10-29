@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { cmsPublicUrl } from "@/lib/cms/public-url";
 import type { TenantSummary } from "@/lib/cms/types";
 
-type EndpointId = "models" | "model" | "entries" | "entry" | "asset";
+type EndpointId = "models" | "model" | "entries" | "entry" | "asset" | "resolve";
 
 type EndpointDefinition = {
   id: EndpointId;
@@ -23,14 +23,14 @@ type EndpointDefinition = {
   path: string;
   pathParameters: Array<{ key: "modelSlug" | "entryId" | "assetId"; label: string; placeholder: string; description: string }>;
   queryParameters: Array<{
-    key: "limit" | "cursor" | "maxDepth" | "locale" | "slug" | "slugField";
+    key: "limit" | "cursor" | "maxDepth" | "locale" | "slug" | "slugField" | "path";
     label: string;
     placeholder: string;
     description: string;
   }>;
 };
 
-type ParameterValues = Record<"modelSlug" | "entryId" | "assetId" | "limit" | "cursor" | "maxDepth" | "locale" | "slug" | "slugField", string>;
+type ParameterValues = Record<"modelSlug" | "entryId" | "assetId" | "limit" | "cursor" | "maxDepth" | "locale" | "slug" | "slugField" | "path", string>;
 
 type ApiResult = {
   status: number | null;
@@ -42,6 +42,15 @@ type ApiResult = {
 };
 
 const endpoints: EndpointDefinition[] = [
+  {
+    id: "resolve", title: "Resolve a page URL", description: "Find a published page by its full path, or return a permanent redirect instruction for a previous URL. Your website sends the redirect.",
+    path: "/api/content/{tenantSlug}/resolve", pathParameters: [],
+    queryParameters: [
+      { key: "path", label: "path", placeholder: "/services/contact", description: "Required full website path. Include any language prefix. No trailing slash except /." },
+      { key: "locale", label: "locale", placeholder: "nl", description: "Language to resolve. Defaults to the tenant default; it is not inferred from the path." },
+      { key: "maxDepth", label: "maxDepth", placeholder: "1", description: "Component expansion depth, from 1 to 5." },
+    ],
+  },
   {
     id: "models",
     title: "List content models",
@@ -113,6 +122,7 @@ const emptyValues: ParameterValues = {
   locale: "",
   slug: "",
   slugField: "",
+  path: "",
 };
 
 export function ApiReferencePanel({

@@ -103,6 +103,8 @@ export type ContentField = {
 };
 
 export type ContentEntry = {
+  /** Default-language page path for entry lists, including draft previews. */
+  url?: string | null;
   id: string;
   tenantId: string;
   modelId: string;
@@ -112,6 +114,7 @@ export type ContentEntry = {
   publishedAt: string | null;
   deletedAt: string | null;
   parentEntryId: string | null;
+  pageParentId: string | null;
   parentFieldId: string | null;
   position: number | null;
   createdBy: string | null;
@@ -125,6 +128,7 @@ export type EntryRevision = {
   tenantId: string;
   entryId: string;
   version: number;
+  pageParentId: string | null;
   data: Record<string, unknown>;
   translations: EntryTranslations;
   createdBy: string | null;

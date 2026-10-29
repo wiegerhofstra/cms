@@ -33,7 +33,9 @@ import { getEnv } from "@/lib/env";
 import { deleteS3Object, presignRead, presignUpload } from "@/lib/storage/s3";
 import { setActiveTenantId } from "@/lib/tenant/active-tenant";
 import { createEntryRevision, getActiveModel, getTenantEntry, sanitizeEntryTranslations, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
-import { lockPagePaths, validatePagePaths, validatePageUrlConfig } from "@/modules/entries/links";
+import { lockPagePaths, validatePageUrlConfig } from "@/modules/entries/links";
+import { resolveEntryPagePath } from "@/lib/page-hierarchy";
+import { assertValidPageParent, assertNoPageChildren, loadPageGraph, publishedPagePaths, syncPagePaths, validatePageGraph } from "@/modules/entries/page-paths";
 import { referencedAssetIds } from "@/modules/entries/assets";
 import { childEntrySchema, entryDataSchema, entryStatusSchema, reorderChildrenSchema, updateEntrySchema } from "@/modules/entries/validation";
 import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields";
@@ -574,10 +576,12 @@ export async function updateModel(modelId: string, input: unknown, tenantSlug?: 
   try {
     const model = await db.transaction(async (tx) => {
       await lockPagePaths(tx, context.activeTenantId);
+      const before = data.pageUrl !== undefined ? publishedPagePaths(await loadPageGraph(tx, context.activeTenantId)) : [];
       if (data.pageUrl !== undefined) await validatePageUrlConfig(tx, context.activeTenantId, modelId, data.pageUrl);
       const [updated] = await tx.update(contentModels)
         .set({ ...data, updatedBy: context.user.id, updatedAt: new Date() })
         .where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId))).returning();
+      if (data.pageUrl !== undefined) await syncPagePaths(tx, context.activeTenantId, before);
       return updated;
     });
 
@@ -770,9 +774,10 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
   try {
     const field = await db.transaction(async (tx) => {
       await lockPagePaths(tx, context.activeTenantId);
+      const before = publishedPagePaths(await loadPageGraph(tx, context.activeTenantId));
       const [linkedModel] = await tx.select({ pageUrl: contentModels.pageUrl }).from(contentModels).where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId))).limit(1);
       if (linkedModel?.pageUrl?.pattern.includes("{slug}") && linkedModel.pageUrl.slugField === currentField.key &&
-        (normalizedField.key !== currentField.key || normalizedField.type !== "slug" || !normalizedField.required || normalizedField.config.unique !== true)) {
+        (normalizedField.key !== currentField.key || normalizedField.type !== "slug" || !normalizedField.required || (!linkedModel.pageUrl.hierarchy && normalizedField.config.unique !== true))) {
         throw new ApiError("CONFLICT", "This field is used for page URLs. Change the model's page URL settings first.");
       }
 
@@ -808,7 +813,7 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
       if (currentField.localized && !normalizedField.localized) {
         await removeFieldTranslations(tx, context.activeTenantId, modelId, currentField.key);
       }
-      if (linkedModel?.pageUrl && currentField.localized !== normalizedField.localized) await validatePagePaths(tx, context.activeTenantId);
+      if (linkedModel?.pageUrl) await syncPagePaths(tx, context.activeTenantId, before);
       return updatedField;
     });
 
@@ -831,25 +836,24 @@ export async function listEntries(modelId: string, query = "", tenantSlug?: stri
   return { entries: await listEntriesForContext(context, modelId, query), nextCursor: null };
 }
 
-export async function createEntry(modelId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string) {
+export async function createEntry(modelId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string, pageParentId?: string | null) {
   const [context, data] = await Promise.all([
     requireTenantContext(crypto.randomUUID(), tenantSlug),
-    Promise.resolve(parseInput(entryDataSchema, { data: input, translations: translationsInput })),
+    Promise.resolve(parseInput(entryDataSchema, { data: input, translations: translationsInput, pageParentId })),
   ]);
   await getActiveModel(db, context.activeTenantId, modelId);
-  const translations = await sanitizeEntryTranslations(db, context.activeTenantId, modelId, data.translations);
-  await validateEntryData(db, context.activeTenantId, modelId, data.data, undefined, translations);
-
   const entry = await db.transaction(async (tx) => {
-    const [createdEntry] = await tx
-      .insert(contentEntries)
-      .values({ tenantId: context.activeTenantId, modelId, data: data.data, translations, createdBy: context.user.id, updatedBy: context.user.id })
-      .returning();
+    await lockPagePaths(tx, context.activeTenantId);
+    await assertValidPageParent(tx, context.activeTenantId, modelId, data.pageParentId);
+    const translations = await sanitizeEntryTranslations(tx, context.activeTenantId, modelId, data.translations);
+    const [createdEntry] = await tx.insert(contentEntries)
+      .values({ tenantId: context.activeTenantId, modelId, data: data.data, translations, pageParentId: data.pageParentId ?? null, createdBy: context.user.id, updatedBy: context.user.id }).returning();
     if (!createdEntry) throw new ApiError("INTERNAL_SERVER_ERROR", "Entry could not be created");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, translations: createdEntry.translations, userId: context.user.id });
+    await validateEntryData(tx, context.activeTenantId, modelId, data.data, createdEntry.id, translations);
+    await validatePageGraph(tx, context.activeTenantId, await loadPageGraph(tx, context.activeTenantId));
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, translations, userId: context.user.id });
     return createdEntry;
   });
-
   return { entry: serializeEntry(entry) };
 }
 
@@ -858,32 +862,30 @@ export async function getEntry(entryId: string, tenantSlug?: string) {
   return getEntryForContext(context, entryId);
 }
 
-export async function updateEntry(entryId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string) {
+export async function updateEntry(entryId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string, pageParentId?: string | null) {
   const [context, data] = await Promise.all([
     requireTenantContext(crypto.randomUUID(), tenantSlug),
-    Promise.resolve(parseInput(updateEntrySchema, { data: input, translations: translationsInput })),
+    Promise.resolve(parseInput(updateEntrySchema, { data: input, translations: translationsInput, pageParentId })),
   ]);
-  const currentEntry = await getTenantEntry(db, context.activeTenantId, entryId);
-  if (!currentEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
-  await getActiveModel(db, context.activeTenantId, currentEntry.modelId);
-  const translations = await sanitizeEntryTranslations(db, context.activeTenantId, currentEntry.modelId, data.translations ?? currentEntry.translations);
   const entry = await db.transaction(async (tx) => {
     await lockPagePaths(tx, context.activeTenantId);
-    if (currentEntry.status === "published") {
-      await validateEntryDataForPublish(tx, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
-    } else {
-      await validateEntryData(tx, context.activeTenantId, currentEntry.modelId, data.data, entryId, translations);
-    }
-    const [updatedEntry] = await tx
-      .update(contentEntries)
-      .set({ data: data.data, translations, updatedBy: context.user.id, updatedAt: new Date() })
-      .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), eq(contentEntries.status, currentEntry.status), sql`${contentEntries.deletedAt} is null`))
-      .returning();
-    if (!updatedEntry) throw new ApiError("CONFLICT", "Entry status changed while it was being updated");
-    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: updatedEntry.id, data: updatedEntry.data, translations: updatedEntry.translations, userId: context.user.id });
-    return updatedEntry;
+    const current = await getTenantEntry(tx, context.activeTenantId, entryId);
+    if (!current) throw new ApiError("NOT_FOUND", "Entry was not found");
+    const [model] = await tx.select({ status: contentModels.status }).from(contentModels).where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, current.modelId)));
+    if (model?.status !== "active") throw new ApiError("CONFLICT", "Archived models do not accept new entry changes");
+    const before = publishedPagePaths(await loadPageGraph(tx, context.activeTenantId));
+    await assertValidPageParent(tx, context.activeTenantId, current.modelId, data.pageParentId);
+    const translations = await sanitizeEntryTranslations(tx, context.activeTenantId, current.modelId, data.translations ?? current.translations);
+    const [updated] = await tx.update(contentEntries)
+      .set({ data: data.data, translations, pageParentId: data.pageParentId === undefined ? current.pageParentId : data.pageParentId, updatedBy: context.user.id, updatedAt: new Date() })
+      .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId))).returning();
+    // Validate the stored candidate so self-links and descendants see its new parent and slug.
+    if (current.status === "published") await validateEntryDataForPublish(tx, context.activeTenantId, current.modelId, data.data, entryId, translations);
+    else await validateEntryData(tx, context.activeTenantId, current.modelId, data.data, entryId, translations);
+    await syncPagePaths(tx, context.activeTenantId, before);
+    await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId, data: updated.data, translations, userId: context.user.id });
+    return updated;
   });
-
   return { entry: serializeEntry(entry) };
 }
 
@@ -893,12 +895,16 @@ export async function deleteEntry(entryId: string, tenantSlug?: string) {
   if (!currentEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
 
   await db.transaction(async (tx) => {
+    await lockPagePaths(tx, context.activeTenantId);
+    await assertNoPageChildren(tx, context.activeTenantId, entryId);
+    const before = publishedPagePaths(await loadPageGraph(tx, context.activeTenantId));
     const [deletedEntry] = await tx
       .update(contentEntries)
       .set({ deletedAt: new Date(), updatedBy: context.user.id, updatedAt: new Date() })
       .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), sql`${contentEntries.deletedAt} is null`))
       .returning();
     if (!deletedEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
+    await syncPagePaths(tx, context.activeTenantId, before);
     await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: deletedEntry.id, data: deletedEntry.data, translations: deletedEntry.translations, userId: context.user.id });
   });
 
@@ -933,12 +939,16 @@ export async function publishEntry(entryId: string, tenantSlug?: string) {
 export async function unpublishEntry(entryId: string, tenantSlug?: string) {
   const context = await requireTenantContext(crypto.randomUUID(), tenantSlug);
   const entry = await db.transaction(async (tx) => {
+    await lockPagePaths(tx, context.activeTenantId);
+    await assertNoPageChildren(tx, context.activeTenantId, entryId, true);
+    const before = publishedPagePaths(await loadPageGraph(tx, context.activeTenantId));
     const [unpublishedEntry] = await tx
       .update(contentEntries)
       .set({ status: "draft", publishedAt: null, updatedBy: context.user.id, updatedAt: new Date() })
       .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.id, entryId), sql`${contentEntries.deletedAt} is null`))
       .returning();
     if (!unpublishedEntry) throw new ApiError("NOT_FOUND", "Entry was not found");
+    await syncPagePaths(tx, context.activeTenantId, before);
     await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: unpublishedEntry.id, data: unpublishedEntry.data, translations: unpublishedEntry.translations, userId: context.user.id });
     return unpublishedEntry;
   });
@@ -977,6 +987,9 @@ export async function createChild(entryId: string, input: unknown, tenantSlug?: 
   }
 
   const childEntry = await db.transaction(async (tx) => {
+    await lockPagePaths(tx, context.activeTenantId);
+    const [targetModel] = await tx.select({ pageUrl: contentModels.pageUrl }).from(contentModels).where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, targetModelId!)));
+    if (targetModel?.pageUrl) throw new ApiError("CONFLICT", "Pages with URLs cannot be embedded as content blocks. Use a page link instead.");
     const [positionRow] = await tx
       .select({ value: max(contentEntries.position) })
       .from(contentEntries)
@@ -1297,7 +1310,11 @@ async function listEntriesForContext(context: TenantContext, modelId: string, qu
     .orderBy(desc(contentEntries.createdAt))
     .limit(100);
 
-  return rows.map(serializeEntry);
+  const [model] = await db.select({ pageUrl: contentModels.pageUrl }).from(contentModels)
+    .where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId)));
+  if (!model?.pageUrl) return rows.map(serializeEntry);
+  const graph = await loadPageGraph(db, context.activeTenantId);
+  return rows.map((entry) => ({ ...serializeEntry(entry), url: resolveEntryPagePath(graph, entry.id, graph.localization.defaultLocale) }));
 }
 
 async function listComponentReferencesForContext(context: TenantContext, fields: ContentField[]) {

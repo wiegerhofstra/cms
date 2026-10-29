@@ -26,6 +26,7 @@ import { uploadAsset } from "./upload-asset";
 import { entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, numberInputValue, parseJsonObject, stringValue } from "./utils";
 
 type EntryFormProps = {
+  siblingSlugField?: string | null;
   tenantSlug: string;
   fields: ContentField[];
   assets: AssetWithPreview[];
@@ -37,7 +38,7 @@ type EntryFormProps = {
   onTranslationsChange: (translations: EntryTranslations) => void;
 };
 
-export function EntryForm({ tenantSlug, fields, assets: loadedAssets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: EntryFormProps) {
+export function EntryForm({ siblingSlugField, tenantSlug, fields, assets: loadedAssets, componentReferences, localization, data, translations, onChange, onTranslationsChange }: EntryFormProps) {
   // Assets uploaded from this form show up right away, before the refreshed asset list arrives.
   const [uploadedAssets, setUploadedAssets] = useState<AssetWithPreview[]>([]);
   const assets = [...uploadedAssets.filter((asset) => !loadedAssets.some((loaded) => loaded.id === asset.id)), ...loadedAssets];
@@ -60,7 +61,8 @@ export function EntryForm({ tenantSlug, fields, assets: loadedAssets, componentR
   const hiddenFields = fields.filter(isHiddenField);
   const hiddenFieldsNeedInput = missingRequiredFields(hiddenFields, data).length > 0;
 
-  function renderField(field: ContentField) {
+  function renderField(sourceField: ContentField) {
+    const field = sourceField.key === siblingSlugField ? { ...sourceField, config: { ...sourceField.config, uniqueAmongSiblings: true } } : sourceField;
     if (isLocalizedField(field) && localization.locales.length > 1) {
       return (
         <LocalizedEntryField
@@ -270,7 +272,7 @@ function EntryFieldInput({ tenantSlug, locale, field, assets, componentReference
       <Field>
         {label}
         <Input id={fieldId} value={stringValue(value)} pattern="[a-z0-9_\-]+" placeholder={placeholder ?? "my-page_slug"} onChange={(event) => onChange(normalizeSlugInput(event.target.value))} />
-        <FieldHelp field={field} hint={`Use lowercase letters, numbers, hyphens, and underscores${field.config.unique === true ? ". Must be unique" : ""}.`} note={note} />
+        <FieldHelp field={field} hint={`Use lowercase letters, numbers, hyphens, and underscores${field.config.uniqueAmongSiblings === true ? ". Must be unique among sibling pages" : field.config.unique === true ? ". Must be unique" : ""}.`} note={note} />
       </Field>
     );
   }
