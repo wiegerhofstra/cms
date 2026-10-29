@@ -37,6 +37,7 @@ import { lockPagePaths, validatePagePaths, validatePageUrlConfig } from "@/modul
 import { referencedAssetIds } from "@/modules/entries/assets";
 import { childEntrySchema, entryDataSchema, entryStatusSchema, reorderChildrenSchema, updateEntrySchema } from "@/modules/entries/validation";
 import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields";
+import { deleteModelField } from "@/modules/models/delete-field";
 import { createModelSchema, fieldInputSchema, modelStatusSchema, moveFieldSchema, updateFieldSchema, updateModelSchema } from "@/modules/models/validation";
 import { extractImageDimensions } from "@/modules/uploads/image-dimensions";
 import { completeUploadSchema, presignUploadSchema, sanitizeFilename, assertAllowedUpload } from "@/modules/uploads/validation";
@@ -821,36 +822,7 @@ export async function updateField(modelId: string, fieldId: string, input: unkno
 
 export async function deleteField(modelId: string, fieldId: string, tenantSlug?: string) {
   const context = await requireTenantContext(crypto.randomUUID(), tenantSlug);
-  const [model] = await db
-    .select({ status: contentModels.status })
-    .from(contentModels)
-    .where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId)))
-    .limit(1);
-  if (!model) throw new ApiError("NOT_FOUND", "Model was not found");
-  if (model.status === "archived") throw new ApiError("CONFLICT", "Archived models cannot be edited");
-
-  const [field] = await db
-    .select({ id: contentModelFields.id, key: contentModelFields.key })
-    .from(contentModelFields)
-    .where(and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.modelId, modelId), eq(contentModelFields.id, fieldId)))
-    .limit(1);
-  if (!field) throw new ApiError("NOT_FOUND", "Field was not found");
-
-  const [entryWithFieldData] = await db
-    .select({ id: contentEntries.id })
-    .from(contentEntries)
-    .where(and(eq(contentEntries.tenantId, context.activeTenantId), eq(contentEntries.modelId, modelId), sql`${contentEntries.data} ? ${field.key}`))
-    .limit(1);
-  if (entryWithFieldData) throw new ApiError("CONFLICT", "Field cannot be removed because entry data exists");
-
-  await db.transaction(async (tx) => {
-    await lockPagePaths(tx, context.activeTenantId);
-    const [linkedModel] = await tx.select({ pageUrl: contentModels.pageUrl }).from(contentModels).where(and(eq(contentModels.tenantId, context.activeTenantId), eq(contentModels.id, modelId))).limit(1);
-    if (linkedModel?.pageUrl?.pattern.includes("{slug}") && linkedModel.pageUrl.slugField === field.key) throw new ApiError("CONFLICT", "This field is used for page URLs. Change the model's page URL settings first.");
-    await tx.delete(contentModelFields).where(and(eq(contentModelFields.tenantId, context.activeTenantId), eq(contentModelFields.modelId, modelId), eq(contentModelFields.id, fieldId)));
-    await removeFieldTranslations(tx, context.activeTenantId, modelId, field.key);
-  });
-  return { deleted: true as const };
+  return deleteModelField(db, context.activeTenantId, modelId, fieldId);
 }
 
 export async function listEntries(modelId: string, query = "", tenantSlug?: string) {

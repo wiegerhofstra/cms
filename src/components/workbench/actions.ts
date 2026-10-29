@@ -34,6 +34,7 @@ import {
 } from "@/lib/cms/workbench";
 import type { PageUrlConfig } from "@/lib/links";
 import type { EntryTranslations } from "@/lib/cms/types";
+import { CmsError } from "@/lib/cms/errors";
 import { createAccessToken, revokeAccessToken, updateAccessToken } from "@/modules/access-tokens/service";
 import type { AccessTokenPermission } from "@/modules/access-tokens/permissions";
 
@@ -155,7 +156,13 @@ export async function moveFieldAction(tenantSlug: string, modelId: string, input
 }
 
 export async function deleteFieldAction(tenantSlug: string, modelId: string, fieldId: string) {
-  const result = await deleteField(modelId, fieldId, tenantSlug);
+  let result;
+  try {
+    result = await deleteField(modelId, fieldId, tenantSlug);
+  } catch (error) {
+    if (error instanceof CmsError && error.status < 500) return { error: error.message };
+    throw error;
+  }
   refresh();
   return result;
 }

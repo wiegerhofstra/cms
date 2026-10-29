@@ -349,7 +349,10 @@ function FieldActions({ tenantSlug, field, models, modelId, localization, isPend
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => run(() => deleteFieldAction(tenantSlug, modelId, field.id), "Field deleted")}>Delete field</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={() => run(async () => {
+              const result = await deleteFieldAction(tenantSlug, modelId, field.id);
+              if ("error" in result) throw new Error(result.error);
+            }, "Field deleted")}>Delete field</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -22,7 +22,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "test:links:integration": "node --experimental-strip-types --conditions=react-server --test src/modules/links/*.integration.test.mjs"
+    "test:links:integration": "node --experimental-strip-types --conditions=react-server --test src/modules/links/*.integration.test.mjs",
+    "test:models:integration": "node --experimental-strip-types --conditions=react-server --test src/modules/models/*.integration.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",
