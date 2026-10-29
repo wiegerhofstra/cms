@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:integration": "node --experimental-strip-types --test src/modules/integration-export/*.test.mjs",
+    "test:integration:api": "node --experimental-strip-types --test src/modules/integration-export/api.integration.mjs",
     "migrate:ommelanden:models": "node --experimental-strip-types scripts/ommelanden/run.mjs",
     "migrate:ommelanden:content": "node --experimental-strip-types scripts/ommelanden/import.mjs",
     "verify:ommelanden": "node --experimental-strip-types --conditions=react-server scripts/ommelanden/verify.mjs",
