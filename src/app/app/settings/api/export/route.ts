@@ -1,8 +1,11 @@
+import { unstable_rethrow } from "next/navigation";
+
 import { getCmsContext, requireAdmin } from "@/lib/cms/context";
 import { CmsError } from "@/lib/cms/errors";
 import { cmsPublicUrl } from "@/lib/cms/public-url";
 import { createIntegrationArchive } from "@/modules/integration-export/archive";
 import { exportTenantIntegration } from "@/modules/integration-export/service";
+import { createDocumentationSetup } from "@/modules/integration-export/setup";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
@@ -16,7 +19,16 @@ export async function GET(request: Request) {
       throw new CmsError("BAD_REQUEST", "A valid tenantSlug is required");
     }
     const format = url.searchParams.get("format") ?? "bundle";
-    if (format !== "bundle" && format !== "guide") throw new CmsError("BAD_REQUEST", "format must be bundle or guide");
+    if (format === "setup") {
+      const files = await createDocumentationSetup(tenantSlug, cmsPublicUrl, {
+        tokenEnv: url.searchParams.get("tokenEnv") ?? undefined,
+        envFile: url.searchParams.get("envFile") ?? undefined,
+      });
+      headers.set("Content-Type", "application/gzip");
+      headers.set("Content-Disposition", `attachment; filename="cms-${tenantSlug}-docs-setup.tar.gz"`);
+      return new Response(createIntegrationArchive(files), { headers });
+    }
+    if (format !== "bundle" && format !== "guide") throw new CmsError("BAD_REQUEST", "format must be bundle, guide or setup");
     const files = await exportTenantIntegration(tenantSlug, cmsPublicUrl);
     if (format === "guide") {
       headers.set("Content-Type", "text/markdown; charset=utf-8");
@@ -26,6 +38,7 @@ export async function GET(request: Request) {
     headers.set("Content-Disposition", `attachment; filename="cms-${tenantSlug}-integration.tar.gz"`);
     return new Response(createIntegrationArchive(files), { headers });
   } catch (error) {
+    unstable_rethrow(error);
     const known = error instanceof CmsError;
     if (!known) console.error("Integration export failed", { requestId, error });
     return Response.json({ error: {

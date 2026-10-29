@@ -242,12 +242,19 @@ export function ApiReferencePanel({
 }
 
 function AgentExportCard({ tenantSlug }: { tenantSlug: string }) {
-  const [pending, setPending] = useState<"bundle" | "guide" | null>(null);
+  const [pending, setPending] = useState<"bundle" | "guide" | "setup" | null>(null);
+  const [tokenEnv, setTokenEnv] = useState("CMS_ACCESS_TOKEN");
+  const [envFile, setEnvFile] = useState(".env.local");
+  const validTokenEnv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(tokenEnv);
 
-  async function exportIntegration(format: "bundle" | "guide") {
+  async function exportIntegration(format: "bundle" | "guide" | "setup") {
     setPending(format);
     try {
       const query = new URLSearchParams({ tenantSlug, format });
+      if (format === "setup") {
+        query.set("tokenEnv", tokenEnv);
+        query.set("envFile", envFile);
+      }
       const response = await fetch(`/app/settings/api/export?${query}`, { cache: "no-store" });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
@@ -260,12 +267,12 @@ function AgentExportCard({ tenantSlug }: { tenantSlug: string }) {
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement("a");
         link.href = url;
-        link.download = `cms-${tenantSlug}-integration.tar.gz`;
+        link.download = `cms-${tenantSlug}-${format === "setup" ? "docs-setup" : "integration"}.tar.gz`;
         document.body.appendChild(link);
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 30_000);
-        toast.success("Integration bundle downloaded");
+        toast.success(format === "setup" ? "Documentation setup downloaded" : "Integration bundle downloaded");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The export failed");
@@ -300,6 +307,47 @@ function AgentExportCard({ tenantSlug }: { tenantSlug: string }) {
         <p className="text-xs text-muted-foreground">
           Extract the .tar.gz file and give your agent the folder, starting with INTEGRATION.md. Re-export after changing your models.
         </p>
+        <div className="grid gap-4 border-t pt-4">
+          <div>
+            <h3 className="font-medium">Update docs from your Node project</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Set up once, then run <code className="font-mono text-foreground">npm run cms:docs</code> to refresh <code className="font-mono text-foreground">docs/cms/</code>.
+              Reuse your existing CMS token. Requires Node.js 22.18 or newer.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="docs-token-env">Token environment variable</FieldLabel>
+              <Input id="docs-token-env" value={tokenEnv} onChange={(event) => setTokenEnv(event.target.value.trim())} placeholder="CMS_ACCESS_TOKEN" aria-invalid={!validTokenEnv} />
+              <FieldDescription>The variable name in your project, not the token itself. Use a server-only variable.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="docs-env-file">Existing environment file</FieldLabel>
+              <Input id="docs-env-file" value={envFile} onChange={(event) => setEnvFile(event.target.value.trim())} placeholder=".env.local" />
+              <FieldDescription>Also reads .env. Leave blank to use only shell or CI variables.</FieldDescription>
+            </Field>
+          </div>
+          <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
+            <li>Enable <code className="font-mono text-foreground">docs:read</code> on your existing token in <Link className="text-foreground underline underline-offset-4" href="/app/settings/auth">Auth settings</Link>. Its value stays the same.</li>
+            <li>Download and extract the setup kit into your project. It includes the updater, tenant config, and instructions.</li>
+            <li>Merge these scripts into your existing <code className="font-mono text-foreground">package.json</code>, then run the update command.</li>
+          </ol>
+          <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs"><code>{JSON.stringify({ scripts: {
+            "cms:docs": "node scripts/update-cms-docs.mjs",
+            update_cms_documentation: "npm run cms:docs",
+          } }, null, 2)}</code></pre>
+          <div>
+            <Button disabled={!tenantSlug || !validTokenEnv || pending !== null} onClick={() => exportIntegration("setup")}>
+              {pending === "setup" ? <Loader2 className="animate-spin" /> : <Download />}
+              Download Node setup kit
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Commit the generated docs, config, and updater. Keep your environment files gitignored.
+            Use <code className="font-mono text-foreground">npm run cms:docs -- --check</code> to check for updates without writing files.
+            Local edits to generated files are protected.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

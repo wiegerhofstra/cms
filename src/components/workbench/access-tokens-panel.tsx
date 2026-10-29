@@ -285,7 +285,7 @@ function RenameAccessTokenDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(accessToken.name);
-  const [permissions, setPermissions] = useState<AccessTokenPermission[]>(accessToken.permissions.filter((value): value is AccessTokenPermission => value === "content:read" || value === "email:send"));
+  const [permissions, setPermissions] = useState<AccessTokenPermission[]>(accessToken.permissions.filter((value): value is AccessTokenPermission => value === "content:read" || value === "email:send" || value === "docs:read"));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -355,9 +355,9 @@ function TokenPermissions({ id, permissions, onChange, disabled }: {
 }) {
   return <fieldset className="grid gap-3" disabled={disabled}>
     <legend className="mb-3 text-sm font-medium">Permissions</legend>
-    {(["content:read", "email:send"] as const).map((permission) => <div key={permission} className="flex items-center gap-2">
+    {(["content:read", "email:send", "docs:read"] as const).map((permission) => <div key={permission} className="flex items-center gap-2">
       <Checkbox id={`${id}-${permission}`} checked={permissions.includes(permission)} onCheckedChange={(checked) => onChange(checked === true ? [...permissions, permission] : permissions.filter((value) => value !== permission))} />
-      <label htmlFor={`${id}-${permission}`} className="text-sm">{permission === "content:read" ? "Read published content" : "Send email"} <span className="text-xs text-muted-foreground">({permission})</span></label>
+      <label htmlFor={`${id}-${permission}`} className="text-sm">{{ "content:read": "Read published content", "email:send": "Send email", "docs:read": "Read integration docs (all models)" }[permission]} <span className="text-xs text-muted-foreground">({permission})</span></label>
     </div>)}
     <p className="text-xs text-muted-foreground">Select at least one permission. Email also requires enabled SMTP settings for the tenant.</p>
   </fieldset>;
