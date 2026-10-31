@@ -149,7 +149,7 @@ All endpoints are relative to the API origin, `https://cms.fourd.nl`. Generated 
 | `GET` | `/api/content/{tenantSlug}/models/{modelSlug}` | One model and its fields, ordered by field position. |
 | `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries` | A cursor-paginated list of published, top-level entries. Accepts `limit`, `cursor`, `maxDepth`, `locale`, and `slug` (with `slugField` when the model has several slug fields) to look up entries by slug. |
 | `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries/{entryId}` | One published entry. `entryId` must be a UUID. Accepts `maxDepth` and `locale`. |
-| `GET` | `/api/content/{tenantSlug}/assets/{assetId}` | One ready asset with a fresh 300-second `url`. Store asset IDs and resolve them here instead of persisting URLs. |
+| `GET` | `/api/content/{tenantSlug}/assets/{assetId}` | One ready asset with stable `url` and `downloadUrl` values backed by the CMS disk cache. |
 
 The model list returns objects with `id`, `name`, `slug`, `status`, `createdAt`, and `updatedAt`. Model detail adds a `fields` array. Each field contains `id`, `key`, `label`, `type`, `required`, `position`, `config`, `isList`, `isTitle`, and `targetModelIds`.
 
@@ -170,7 +170,7 @@ An entry contains `id`, `modelId`, `status`, `data`, `publishedAt`, `createdAt`,
 
 Entry endpoints return only entries whose status is `published` and that have not been deleted. The collection endpoint returns only top-level entries; a published child entry can still be requested directly by its UUID and model slug. Component fields also resolve only published, non-deleted entries from an allowed target model. An unavailable single component becomes `null`; unavailable items are omitted from component lists.
 
-An asset field resolves a ready, non-deleted asset from the same tenant to an object with `id`, `originalName`, `mimeType`, `sizeBytes`, `imageWidth`, `imageHeight`, and `url`. Rich-text asset nodes retain `attrs.assetId` and add the same object at `attrs.asset`. The `url` is a presigned read URL that expires after 300 seconds, so clients must fetch a fresh API response rather than persist the URL. An unavailable asset resolves to `null`.
+An asset field resolves a ready, non-deleted asset from the same tenant to an object with `id`, `originalName`, `mimeType`, `sizeBytes`, `imageWidth`, `imageHeight`, `url`, and `downloadUrl`. Rich-text asset nodes retain `attrs.assetId` and add the same object at `attrs.asset`. The `url` and `downloadUrl` are identical stable, file-specific URLs backed by the CMS disk cache. Anyone with the URL can read that file until deletion or signing-secret rotation; every request checks access before serving cached bytes. Replaced files get new asset IDs. See [asset caching](docs/asset-caching.md) for deployment, limits, and rollout. An unavailable asset resolves to `null`.
 
 ### Response and error shape
 

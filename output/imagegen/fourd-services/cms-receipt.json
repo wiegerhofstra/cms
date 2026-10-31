@@ -1,0 +1,68 @@
+{
+  "uploadedAt": "2026-10-31",
+  "cmsUrl": "https://cms.fourd.nl/app/fourd/entries/c14051f7-8f0f-422d-9acf-f568b5c9f1e4",
+  "assignments": [
+    {
+      "slug": "maatwerk",
+      "assetId": "bfa3af8c-ec7a-4648-a981-e1f78e780e29"
+    },
+    {
+      "slug": "automatisering",
+      "assetId": "f7bb8e1b-5271-4e56-bced-a21ff94b5bf1"
+    },
+    {
+      "slug": "website",
+      "assetId": "aef1cdd7-bdf2-489f-96d0-39d387c87770"
+    },
+    {
+      "slug": "mobile-apps",
+      "assetId": "42d732db-1fca-458c-821a-396726dcf432"
+    },
+    {
+      "slug": "full-stack",
+      "assetId": "b11be325-2158-481c-a645-5bf5b78df501"
+    }
+  ],
+  "verification": [
+    {
+      "bytes": 53144,
+      "imageStatus": 200,
+      "path": "/en/custom-software",
+      "src": "/media/bfa3af8c-ec7a-4648-a981-e1f78e780e29.webp",
+      "status": 200,
+      "type": "image/webp"
+    },
+    {
+      "bytes": 65854,
+      "imageStatus": 200,
+      "path": "/en/automation",
+      "src": "/media/f7bb8e1b-5271-4e56-bced-a21ff94b5bf1.webp",
+      "status": 200,
+      "type": "image/webp"
+    },
+    {
+      "bytes": 70480,
+      "imageStatus": 200,
+      "path": "/en/websites",
+      "src": "/media/aef1cdd7-bdf2-489f-96d0-39d387c87770.webp",
+      "status": 200,
+      "type": "image/webp"
+    },
+    {
+      "bytes": 63796,
+      "imageStatus": 200,
+      "path": "/en/mobile-apps",
+      "src": "/media/42d732db-1fca-458c-821a-396726dcf432.webp",
+      "status": 200,
+      "type": "image/webp"
+    },
+    {
+      "bytes": 73404,
+      "imageStatus": 200,
+      "path": "/en/full-stack",
+      "src": "/media/b11be325-2158-481c-a645-5bf5b78df501.webp",
+      "status": 200,
+      "type": "image/webp"
+    }
+  ]
+}

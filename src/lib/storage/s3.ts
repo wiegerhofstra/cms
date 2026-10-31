@@ -8,7 +8,23 @@ import { getEnv } from "@/lib/env";
 
 const globalForS3 = globalThis as unknown as {
   cmsS3Client?: S3Client;
+  cmsMediaS3Client?: S3Client;
 };
+
+/** Media downloads have application-level retries covering both headers and streamed bytes. */
+export function getMediaS3Client(): S3Client {
+  const env = getEnv();
+  return globalForS3.cmsMediaS3Client ??= new S3Client({
+    region: env.S3_REGION,
+    endpoint: env.S3_ENDPOINT || undefined,
+    forcePathStyle: Boolean(env.S3_ENDPOINT),
+    maxAttempts: 1,
+    requestHandler: { connectionTimeout: 3_000, requestTimeout: 15_000 },
+    credentials: env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY ? {
+      accessKeyId: env.S3_ACCESS_KEY_ID, secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+    } : undefined,
+  });
+}
 
 export function getS3Client(): S3Client {
   const env = getEnv();

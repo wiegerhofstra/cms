@@ -114,11 +114,12 @@ test("page and asset links validate and resolve through the database", async (t)
     await t.test("download endpoint checks its capability, and deleting a file revokes access", async () => {
       const url = new URL((await getDeliveryAsset(tenantId, assetId)).downloadUrl);
       const token = url.pathname.split("/").at(-1);
-      const request = new Request(url);
+      const request = new Request(url, { method: "HEAD" });
       const response = await download(request, { params: Promise.resolve({ tenantId, assetId, token }) });
-      assert.equal(response.status, 307);
-      assert.equal(response.headers.get("cache-control"), "private, no-store");
-      assert.ok(response.headers.get("location"));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "private, no-cache, must-revalidate");
+      assert.equal(response.headers.get("content-length"), "123");
+      assert.equal(response.headers.get("location"), null);
       assert.equal((await download(request, { params: Promise.resolve({ tenantId, assetId, token: "invalid" }) })).status, 404);
       assert.equal((await download(request, { params: Promise.resolve({ tenantId: otherTenantId, assetId, token }) })).status, 404);
       await db.update(assets).set({ deletedAt: new Date(), status: "deleted" }).where(eq(assets.id, assetId));

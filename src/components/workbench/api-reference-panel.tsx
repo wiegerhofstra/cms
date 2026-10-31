@@ -103,7 +103,7 @@ const endpoints: EndpointDefinition[] = [
   {
     id: "asset",
     title: "Get an asset",
-    description: "Returns one ready asset with a fresh download URL. Store asset IDs and resolve them here when serving media.",
+    description: "Returns one ready asset with a stable media URL backed by the CMS cache. Store asset IDs as the source of truth.",
     path: "/api/content/{tenantSlug}/assets/{assetId}",
     pathParameters: [
       { key: "assetId", label: "Asset ID", placeholder: "00000000-0000-0000-0000-000000000000", description: "The asset's UUID, as found in entry data." },

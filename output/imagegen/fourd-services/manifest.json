@@ -1,0 +1,69 @@
+{
+  "generator": "built-in image_gen",
+  "commonPrompt": "Use case: stylized-concept. Asset type: premium website service cover illustration for FourD Software, a Dutch software studio. Create a finished editorial 3D illustration, refined architectural maquette with precise isometric geometry and tactile matte ceramic / painted metal surfaces. Brand palette: deep cobalt #203f91, navy #172e68, warm white #f5f4ef, pale periwinkle #b5c8ff, small golden-yellow #ffda3d accents. Background is seamless warm off-white with a very faint fine technical drafting grid fading out at the edges. Soft directional studio daylight, crisp contact shadows, subtle ambient occlusion, beautiful restrained materials, professional and approachable. Ultrawide landscape canvas, 2400x1024, 21:9 aspect ratio. Crucial responsive framing: ALL essential objects within the central 55% of canvas width and central 80% of height. Place the scene centered, with generous empty space at left and right. The entire object assembly and shadows must remain in frame, no cut-off objects. This ensures a centered 3:2 mobile crop retains the subject. Use the attached image only as a style reference for color, lighting and materials; create the different subject described below. One cohesive scene, moderately close enough to read clearly at web size. No words, no letters, no numbers, no logos, no watermark, no people, no photoreal offices, no neon, no purple, no excessive tiny details, no infographic labels. Subject: ",
+  "assets": [
+    {
+      "slug": "maatwerk",
+      "title": "Software op maat",
+      "entry": "d8e10457-33b0-4e2e-af90-f51ad59b912c",
+      "subject": "A bespoke software workbench: three precisely fitted thick modular interface panels on a low rectangular architectural plinth. One is a small structured dashboard, one has a clean calendar grid, one a neat arrangement of data rows. A single warm yellow custom-shaped connector clicks into the blue assembly, visually showing a tailored solution. The panels are tangible objects, clean planar geometry, no puzzle-piece cliché.",
+      "original": "fourd-maatwerk-cover.png",
+      "upload": "fourd-maatwerk-cover.webp",
+      "width": 1916,
+      "height": 821,
+      "bytes": 53144,
+      "finalReframingPrompt": "Reframe the attached finished 3D illustration into an ultrawide 21:9 landscape image, 2400x1024. Preserve exactly the objects, their appearance and their relative arrangement. Zoom out and extend the warm off-white drafting-grid background horizontally. Place the entire scene centered within the middle 55% of the total canvas width and middle 80% of its height. No text. No crop of any object or plinth. A complete centered composition with generous margins at the left and right."
+    },
+    {
+      "slug": "automatisering",
+      "title": "Automatisering",
+      "entry": "bd94857c-7ad6-462d-917d-bb1a3ab5fce2",
+      "subject": "A beautifully ordered miniature automation mechanism: three low stations joined by a single continuous yellow guided track, small white square data tiles travel from an input tray through a cobalt processing gate into a neatly organized output tray. A graceful geometric loop suggests repeatable dependable processing. Recognizable digital workflow metaphor, no factory machinery, no gears.",
+      "original": "fourd-automatisering-cover.png",
+      "upload": "fourd-automatisering-cover.webp",
+      "width": 1920,
+      "height": 819,
+      "bytes": 65854
+    },
+    {
+      "slug": "website",
+      "title": "Websites",
+      "entry": "2757870a-bba7-4b21-8bae-295c0a014edc",
+      "subject": "A beautifully composed responsive website as architectural objects: one large freestanding landscape browser panel and a smaller mobile panel side by side on a low cobalt plinth. Both show the same restrained editorial composition of cobalt header shapes, pale image rectangles and one yellow call-to-action block. Tangible matte white frames, subtle blue extruded sides, understated browser dots, no letters.",
+      "original": "fourd-website-cover.png",
+      "upload": "fourd-website-cover.webp",
+      "width": 1919,
+      "height": 820,
+      "bytes": 70480
+    },
+    {
+      "slug": "mobile-apps",
+      "title": "Mobiele apps",
+      "entry": "2891cfb2-e4cc-476c-96a7-d8a08ea03cde",
+      "subject": "Two elegant unbranded smartphone objects standing in a balanced angled arrangement on a low cobalt architectural plinth. One main screen shows a clear modular app interface with a small yellow action block and crisp pale blue rows, the second shows a simple route with three connected yellow location points. One small floating white interface tile reinforces smooth everyday use. No writing, no brands.",
+      "original": "fourd-mobile-apps-cover.png",
+      "upload": "fourd-mobile-apps-cover.webp",
+      "width": 1920,
+      "height": 819,
+      "bytes": 63796
+    },
+    {
+      "slug": "full-stack",
+      "title": "Full-stack oplossingen",
+      "entry": "8a1fdef1-09de-40dd-ae80-249c21aac892",
+      "subject": "An exploded architectural model of a complete software system: three broad shallow rectangular tiers hovering closely above one another. The bottom has three small cobalt data cylinders, the middle contains neatly arranged blue logic modules, the top is a clean white application interface panel. A continuous small yellow connection passes through all three tiers, clearly uniting the whole. Low wide composition rather than a tall tower.",
+      "original": "fourd-full-stack-cover.png",
+      "upload": "fourd-full-stack-cover.webp",
+      "width": 1920,
+      "height": 819,
+      "bytes": 73404
+    }
+  ],
+  "previousCovers": {
+    "maatwerk": "3df8e8b7-4d0e-445b-9187-b5c3a130cad2",
+    "automatisering": "d8d7e1cc-f8c1-4fe4-9791-afb1625a4421",
+    "website": "ad8963a7-95b7-4d35-842e-8d79124a17c2",
+    "mobile-apps": "942438e3-de31-43ad-8e04-e5297c62248a",
+    "full-stack": null
+  }
+}

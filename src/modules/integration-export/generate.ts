@@ -106,8 +106,8 @@ function commonDefinitions(): Record<string, Schema> {
     Asset: object({
       id: uuid, originalName: string, mimeType: string, sizeBytes: { type: "integer" },
       imageWidth: nullable({ type: "integer" }), imageHeight: nullable({ type: "integer" }),
-      downloadUrl: { type: "string", format: "uri", description: "Durable file URL. Anyone with this URL can read this specific file until deletion or signing-secret rotation." },
-      url: { type: "string", format: "uri", description: "Presigned read URL. Expires 300 seconds after issuance. Fetch fresh content to renew it." },
+      downloadUrl: { type: "string", format: "uri", description: "Stable cached file URL. Anyone with this URL can read this specific file until deletion or signing-secret rotation. Access is rechecked on every request." },
+      url: { type: "string", format: "uri", description: "Stable cached media URL, identical to downloadUrl. Does not expire on a timer. Access is revoked by deletion or signing-secret rotation." },
     }),
     RichTextNode: {
       ...object({
@@ -224,7 +224,7 @@ function openApi(tenantInfo: ExportInput["tenant"], origin: string, definitions:
   const path = "/api/content/{tenantSlug}/models";
   return replaceRefs({
     openapi: "3.1.0",
-    info: { title: "CMS Content API", version: formatVersion, description: "Read-only content delivery. This schema snapshot describes one tenant. Unsupported: writes, draft preview, search, filters other than slug, and custom sorting. Translatable fields resolve per ?locale= with fallback to the default language. Assets can be re-resolved by ID for fresh URLs. The revalidate webhook describes the request the CMS sends to your website. Primitive fields pass through stored JSON; x-cms-editorSchema describes expected editor values, not delivery validation." },
+    info: { title: "CMS Content API", version: formatVersion, description: "Read-only content delivery. This schema snapshot describes one tenant. Unsupported: writes, draft preview, search, filters other than slug, and custom sorting. Translatable fields resolve per ?locale= with fallback to the default language. Assets have stable URLs backed by the CMS disk cache. The revalidate webhook describes the request the CMS sends to your website. Primitive fields pass through stored JSON; x-cms-editorSchema describes expected editor values, not delivery validation." },
     "x-cms-schemaHash": schemaHash,
     servers: [{ url: origin }],
     paths: {
@@ -239,7 +239,7 @@ function openApi(tenantInfo: ExportInput["tenant"], origin: string, definitions:
         param("slug", "query", { type: "string", minLength: 1, maxLength: 200 }, "Only entries whose slug field equals this value. Translatable slug fields match the slug in the requested locale, falling back to the default-language slug. Hierarchical routing slugs are only unique among siblings; use resolvePage for website routing. Other slugs are unique only when configured so (config.unique)."),
         param("slugField", "query", string, "Key of the slug field to match. Required only when the model has more than one slug field; unknown keys return 400."),
       ], object({ data: array(entrySchema), meta: object({ nextCursor: nullable(string), maxDepth: { type: "integer" }, locale: localeMeta }, ["nextCursor", "maxDepth"]) }), "Published, non-deleted root entries ordered by createdAt descending, then id descending. No snapshot guarantee across pages. Expansion budgets: 500 component references, 200 unique assets; rich text traversal budget 2,000 visited values and nesting depth 100. Exceeding a budget returns 400; lower limit or maxDepth, or simplify the document.") },
-      [`/api/content/{tenantSlug}/assets/{assetId}`]: { get: operation("getAsset", "Get an asset with a fresh URL", [tenant, param("assetId", "path", uuid, "UUID of a ready asset, as found in entry data (asset fields and rich-text attrs.assetId).")], object({ data: ref("Asset") }), "Returns any ready, non-deleted asset of this tenant with a newly signed url (valid 300 seconds). Store asset IDs and call this when serving media, instead of persisting delivered URLs.") },
+      [`/api/content/{tenantSlug}/assets/{assetId}`]: { get: operation("getAsset", "Get an asset with a stable media URL", [tenant, param("assetId", "path", uuid, "UUID of a ready asset, as found in entry data (asset fields and rich-text attrs.assetId).")], object({ data: ref("Asset") }), "Returns any ready, non-deleted asset of this tenant with stable url and downloadUrl values. Both serve bytes through the CMS cache and check file access on every request. Store asset IDs as the source of truth; refresh URLs after signing-secret rotation.") },
       [`${path}/{modelSlug}/entries/{entryId}`]: { get: operation("getEntry", "Get one published entry", [tenant, model, param("entryId", "path", uuid, "UUID of the entry. Published child entries can be fetched directly."), depth, locale], object({ data: entrySchema, meta: object({ maxDepth: { type: "integer" }, locale: localeMeta }, ["maxDepth"]) }), "Returns a published, non-deleted entry belonging to this model. The same expansion limits as listEntries apply.") },
     },
     webhooks: {
@@ -355,7 +355,7 @@ Send Authorization: Bearer cms_at_<secret> on each GET. A valid token for anothe
 - GET /models/{modelSlug}: { data: ModelDetail }; fields in position order.
 - GET /models/{modelSlug}/entries: { data: Entry[], meta: { nextCursor, maxDepth, locale } }.
 - GET /models/{modelSlug}/entries/{entryId}: { data: Entry, meta: { maxDepth, locale } }; entryId is a UUID, not a slug.
-- GET /assets/{assetId}: { data: Asset }; any ready asset of this tenant with a freshly signed url.
+- GET /assets/{assetId}: { data: Asset }; any ready asset of this tenant with a stable cached media url.
 
 Paths above are relative to /api/content/{tenantSlug}. Encode path segments and query values. Only GET is application-defined; framework-generated HEAD/OPTIONS/405 responses can have a different body.
 Every application GET response has Cache-Control: private, no-store and X-Request-Id. Errors are { error: { code, message, requestId } }. Codes: BAD_REQUEST (400), UNAUTHORIZED (401), FORBIDDEN (403), NOT_FOUND (404), INTERNAL_SERVER_ERROR (500). A 401 includes WWW-Authenticate: Bearer. Do not blindly retry 400/401/403/404; report the request ID. Network failures and 500s may be retried with a bounded backoff.
@@ -395,13 +395,13 @@ Each response is limited to 500 traversed component references and 200 unique as
 
 An asset field is { id, originalName, mimeType, sizeBytes, imageWidth, imageHeight, url, downloadUrl } or null. Dimensions can be null. Asset fields may limit file types (config.allowedTypes), but any file type can occur in rich text and older content.
 
-Asset IDs are unique and permanent, and an ID always refers to the same file: the bytes behind an ID never change. When an editor replaces a file, the entry gets a NEW asset ID; the old ID keeps pointing at the old file until that asset is deleted, after which it returns 404. Only originalName can be edited later. So treat a changed asset ID as "the file changed", and use the asset ID as your cache key: bytes fetched for an ID can be cached indefinitely (for example Cache-Control: public, max-age=31536000, immutable on a route that serves them).
+Asset IDs are unique and permanent, and an ID always refers to the same file: the bytes behind an ID never change. When an editor replaces a file, the entry gets a NEW asset ID; the old ID keeps pointing at the old file until that asset is deleted, after which it returns 404. Only originalName can be edited later. Treat a changed asset ID as "the file changed". The CMS can retain those immutable bytes on disk while checking authorization on each request; consumer HTTP caches must still revalidate access before serving their copies.
 
-downloadUrl is a durable, file-specific URL that redirects to a fresh read URL. It works without an API token in the browser; anyone with the URL can access that file until deletion or signing-secret rotation. Use it for PDF links and other public content.
+url and downloadUrl are identical, stable URLs that serve the file bytes through the CMS disk cache. They work without an API token in the browser; anyone with the URL can access that file until deletion or signing-secret rotation. The CMS checks the capability and live asset status before serving cached bytes. Use url directly for images and downloadUrl for PDF links and other public content. Replaced files get new asset IDs and URLs; never overwrite existing S3 object keys.
 
-url is a presigned read URL that expires after 300 seconds. Never persist it, cache it past its validity, or bake it into long-lived static HTML. Instead, store and render asset IDs, link to a route of your own such as /media/{assetId}, and have that route call getAsset (GET /assets/{assetId}) for a fresh url. examples/media-route.ts redirects to the signed url with a short cache; proxy the bytes instead if you need your own domain or long-lived caching.
+Store asset IDs as the source of truth. Asset URLs no longer expire after five minutes, but fetch fresh content after signing-secret rotation. Existing integrations using getAsset and /media/{assetId} keep working; examples/media-route.ts redirects to the stable CMS URL. Honor the media response Cache-Control (private, no-cache, must-revalidate) so deletion and capability revocation are checked. Do not cache file responses as public or immutable. Previously cached S3 URLs must be refreshed once during rollout.
 
-Rich text is JSON, not HTML. A document generally has type=doc and a content array. rich-text.ts renders it to safe HTML: renderRichText(document, { assetUrl: (asset) => "/media/" + asset.id }) escapes all text and attributes, allows only http(s), mailto, tel and relative links, and renders the children of unknown nodes. Pass assetUrl so images use your stable media route instead of the expiring url. In React, insert the result with dangerouslySetInnerHTML, or write your own renderer following the same rules: render supported nodes/marks explicitly, escape text, allow only safe link protocols, and use a graceful fallback for unknown nodes. Typical nodes include paragraph, text, heading (levels 1–6), bulletList, orderedList, listItem, blockquote, codeBlock, hardBreak, horizontalRule, table, tableRow, tableCell, tableHeader and asset. Table cells contain block content and may have colspan/rowspan attributes. Typical marks include bold, italic, strike, underline, code and link.
+Rich text is JSON, not HTML. A document generally has type=doc and a content array. rich-text.ts renders it to safe HTML: renderRichText(document, { assetUrl: (asset) => "/media/" + asset.id }) escapes all text and attributes, allows only http(s), mailto, tel and relative links, and renders the children of unknown nodes. The default renderer uses the stable asset url; pass assetUrl only if you want your own media route. In React, insert the result with dangerouslySetInnerHTML, or write your own renderer following the same rules: render supported nodes/marks explicitly, escape text, allow only safe link protocols, and use a graceful fallback for unknown nodes. Typical nodes include paragraph, text, heading (levels 1–6), bulletList, orderedList, listItem, blockquote, codeBlock, hardBreak, horizontalRule, table, tableRow, tableCell, tableHeader and asset. Table cells contain block content and may have colspan/rowspan attributes. Typical marks include bold, italic, strike, underline, code and link.
 
 Link marks keep type=link. External links have attrs.kind=url (legacy links may omit kind). Page links store attrs.kind=page and attrs.entryId; asset links store attrs.kind=asset and attrs.assetId. Delivery fills attrs.href with the current localized page path or a durable file URL. Render that href; never construct a URL from the stored ID. Unavailable targets have href=null and missing=true: render their text without an anchor. Links do not recursively expand target pages or depend on maxDepth. Honor attrs.target=_blank for all link types and add rel="noopener noreferrer".
 
@@ -535,9 +535,9 @@ export async function GET(_request: Request, context: { params: Promise<{ assetI
   if (!assetIdPattern.test(assetId)) return new Response(null, { status: 404 });
   try {
     const { data } = await cms().getAsset(assetId);
-    // The signed URL is valid for 300 seconds, so the redirect may only be cached briefly.
-    // To cache for longer, fetch data.url and stream the bytes with an immutable Cache-Control instead.
-    return new Response(null, { status: 302, headers: { Location: data.url, "Cache-Control": "public, max-age=60" } });
+    // The CMS serves cached bytes and checks file access on each request.
+    // Directly rendering data.url avoids this extra redirect entirely.
+    return new Response(null, { status: 302, headers: { Location: data.url, "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (error instanceof CmsApiError && error.status === 404) return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
     throw error;
@@ -588,7 +588,7 @@ export async function loadExample(entryId: string, assetId?: string) {
       }
     }
   }
-  // Asset IDs are stable; their URLs expire after 300 seconds. Resolve a fresh URL when serving the file.
+  // Asset IDs and URLs are stable. Refresh content after signing-secret rotation.
   const asset = assetId ? await cms.getAsset(assetId) : null;
   return { models, model, page, detail, asset };
 }
@@ -600,7 +600,7 @@ const richTextSource = `// Renders CMS rich text (Tiptap JSON) to safe HTML. All
 import type { DeliveryAsset, RichTextNode } from "./types";
 
 export type RichTextOptions = {
-  /** Where an asset is served, e.g. (asset) => "/media/" + asset.id. Defaults to asset.url, which expires after 300 seconds. Return null to omit the asset. */
+  /** Where an asset is served, e.g. (asset) => "/media/" + asset.id. Defaults to the stable asset.url. Return null to omit the asset. */
   assetUrl?: (asset: DeliveryAsset) => string | null;
   /** Alternative text for images. The CMS stores no alt text, so the default is "" (decorative). */
   assetAlt?: (asset: DeliveryAsset) => string;
@@ -870,7 +870,7 @@ export function createCmsClient(config: CmsClientConfig) {
       const page = await listEntries(model, { ...options, slug, limit: 1 });
       return page.data[0] ?? null;
     },
-    /** A fresh url for a stored asset ID. URLs expire after 300 seconds; never persist them. */
+    /** Resolve a stored asset ID to a stable cached media URL. Refresh after signing-secret rotation. */
     async getAsset(id: string, signal?: AbortSignal): Promise<{ data: DeliveryAsset }> {
       const body = await request(tenantBase + "/assets/" + encodeURIComponent(id), {}, signal);
       if (!body.data || typeof body.data !== "object" || !("url" in body.data) || typeof body.data.url !== "string") throw new CmsApiError(200, "INVALID_RESPONSE", "CMS asset is invalid", null);

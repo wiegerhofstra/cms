@@ -11,6 +11,10 @@ const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional().default(""),
   S3_SECRET_ACCESS_KEY: z.string().optional().default(""),
   S3_ENDPOINT: z.string().optional().default(""),
+  ASSET_CACHE_DIR: z.string().min(1).default(".cache/assets"),
+  ASSET_CACHE_MAX_BYTES: z.coerce.number().int().positive().default(1024 * 1024 * 1024),
+  ASSET_CACHE_MAX_OBJECT_BYTES: z.coerce.number().int().positive().default(128 * 1024 * 1024),
+  ASSET_ORIGIN_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
 });
 

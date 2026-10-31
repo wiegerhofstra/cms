@@ -9,7 +9,6 @@ import { CmsError } from "@/lib/cms/errors";
 import { resolveEntryPagePath } from "@/lib/page-hierarchy";
 import { loadPageGraph } from "@/modules/entries/page-paths";
 import { assetDownloadUrl } from "@/modules/uploads/download";
-import { presignRead } from "@/lib/storage/s3";
 import { canonicalLocale, isLocalizedField, localizeEntryData, type TenantLocalization } from "@/modules/localization/locales";
 import { getTenantLocalization } from "@/modules/localization/tenant";
 import { createRichTextAssetResolver } from "./rich-text";
@@ -132,7 +131,7 @@ export async function getPublishedEntry(input: {
   };
 }
 
-/** A ready asset by ID with a fresh read URL, so integrations can store asset IDs instead of expiring URLs. */
+/** A ready asset by ID with a stable, capability-protected media URL. */
 export async function getDeliveryAsset(tenantId: string, assetId: string) {
   const id = z.uuid().safeParse(assetId);
   if (!id.success) throw new CmsError("BAD_REQUEST", "assetId must be a UUID");
@@ -146,6 +145,7 @@ export async function getDeliveryAsset(tenantId: string, assetId: string) {
 }
 
 async function serializeDeliveryAsset(asset: typeof assets.$inferSelect) {
+  const url = assetDownloadUrl(asset.tenantId, asset.id);
   return {
     id: asset.id,
     originalName: asset.originalName,
@@ -153,8 +153,8 @@ async function serializeDeliveryAsset(asset: typeof assets.$inferSelect) {
     sizeBytes: asset.sizeBytes,
     imageWidth: asset.imageWidth,
     imageHeight: asset.imageHeight,
-    downloadUrl: assetDownloadUrl(asset.tenantId, asset.id),
-    url: await presignRead({ bucket: asset.bucket, objectKey: asset.objectKey, expiresIn: 300 }),
+    downloadUrl: url,
+    url,
   };
 }
 
