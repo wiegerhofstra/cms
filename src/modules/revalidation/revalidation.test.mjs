@@ -81,3 +81,53 @@ test("network failures produce an actionable error without the URL or token", as
     return true;
   });
 });
+
+test("Coolify webhook validation restricts deployments to one application and forces fresh content", async () => {
+  const { coolifyDeployUrl, consumerTypeSchema } = await import("./validation.ts");
+  const url = new URL(coolifyDeployUrl("https://coolify.example.com/api/v1/deploy?uuid=app-123&force=false"));
+  assert.equal(url.searchParams.get("force"), "true");
+  assert.ok(consumerTypeSchema.safeParse("astro").success);
+  assert.ok(consumerTypeSchema.safeParse("nextjs").success);
+  assert.equal(consumerTypeSchema.safeParse("other").success, false);
+  for (const value of [
+    "https://coolify.example.com/api/v1/deploy?tag=all",
+    "https://coolify.example.com/api/v1/deploy?uuid=a,b",
+    "https://coolify.example.com/api/v1/deploy?uuid=a&uuid=b",
+    "https://coolify.example.com/api/v1/deploy?uuid=a&pr=1",
+    "https://coolify.example.com/api/v1/deploy?uuid=a&token=secret",
+    "https://coolify.example.com/api/v1/restart?uuid=a",
+    "https://user:secret@coolify.example.com/api/v1/deploy?uuid=a",
+    "file:///api/v1/deploy?uuid=a",
+  ]) assert.throws(() => coolifyDeployUrl(value), undefined, value);
+});
+
+test("Coolify only confirms a matching queued deployment and does not follow redirects or leak responses", async (t) => {
+  const { requestCoolifyBuild } = await import("./coolify.ts");
+  const requests = [];
+  let mode = "ok";
+  const server = createServer((req, res) => {
+    requests.push({ url: req.url, method: req.method, auth: req.headers.authorization });
+    if (req.method !== "POST") { res.writeHead(405, { Allow: "POST" }); res.end(); return; }
+    if (mode === "redirect") { res.writeHead(302, { Location: "/redirect-target" }); res.end(); return; }
+    if (mode === "unauthorized") { res.writeHead(401); res.end("private-token"); return; }
+    if (mode === "html") { res.end("<html>login private-token</html>"); return; }
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ deployments: mode === "empty" ? [] : [{
+      resource_uuid: mode === "wrong-resource" ? "other" : "app123",
+      deployment_uuid: mode === "invalid-id" ? "<html>private-token</html>" : "build123",
+    }] }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const webhook = `http://127.0.0.1:${server.address().port}/api/v1/deploy?uuid=app123&force=false`;
+  assert.equal(await requestCoolifyBuild(webhook, "private-token"), "build123");
+  assert.deepEqual(requests[0], { url: "/api/v1/deploy?uuid=app123&force=true", method: "POST", auth: "Bearer private-token" });
+  for (mode of ["empty", "html", "wrong-resource", "invalid-id", "unauthorized", "redirect"]) {
+    await assert.rejects(requestCoolifyBuild(webhook, "private-token"), (error) => {
+      assert.doesNotMatch(error.message, /private-token|<html>/);
+      assert.match(error.message, /Coolify/);
+      return true;
+    });
+  }
+  assert.equal(requests.some((req) => req.url === "/redirect-target"), false);
+});

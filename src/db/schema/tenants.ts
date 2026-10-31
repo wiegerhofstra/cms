@@ -3,6 +3,8 @@ import { index, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizz
 
 import { user } from "./auth";
 
+export const consumerType = pgEnum("consumer_type", ["nextjs", "astro"]);
+
 export const membershipRole = pgEnum("membership_role", ["owner", "editor"]);
 
 export const tenants = pgTable(
@@ -11,6 +13,7 @@ export const tenants = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     slug: text("slug").notNull().unique(),
     name: text("name").notNull(),
+    consumerType: consumerType("consumer_type").notNull().default("nextjs"),
     // Values for the default locale are stored in the entry data; other locales live in entry translations.
     defaultLocale: text("default_locale").notNull().default("en"),
     locales: text("locales").array().notNull().default(sql`ARRAY['en']::text[]`),

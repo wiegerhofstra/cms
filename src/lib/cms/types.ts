@@ -3,6 +3,8 @@ import type { PageUrlConfig } from "@/lib/links";
 
 export type { EntryTranslations, TenantLocalization };
 
+export type ConsumerType = "nextjs" | "astro";
+
 export type TenantRole = "owner" | "editor";
 export type AppRole = "admin" | "user";
 export type ModelStatus = "active" | "archived";
@@ -44,6 +46,7 @@ export type ManagedUser = CmsUser & {
 };
 
 export type TenantSummary = {
+  consumerType: ConsumerType;
   id: string;
   slug: string;
   name: string;
@@ -188,7 +191,7 @@ export type WorkbenchShell = {
   me: CmsSessionView;
   activeMembership: TenantMembership | null;
   models: ContentModel[];
-  revalidation: { configured: boolean; lastRevalidatedAt: string | null };
+  revalidation: { consumerType: ConsumerType; lastDeploymentId: string | null; configured: boolean; lastRevalidatedAt: string | null };
 };
 
 export type EntryListData = {

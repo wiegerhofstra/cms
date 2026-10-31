@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { saveConsumerTypeAction } from "@/modules/revalidation/actions";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { TenantSummary } from "@/lib/cms/types";
 import { createTenantAction } from "./actions";
@@ -36,7 +38,7 @@ export function TenantSettingsPanel({ tenants, activeTenantId }: { tenants: Tena
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Building2 /> Tenants</CardTitle>
-          <CardDescription>All workspaces configured for this CMS installation.</CardDescription>
+          <CardDescription>Choose each tenant’s website framework. New tenants default to Next.js. Configure revalidation or Coolify builds in Website settings.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -44,6 +46,7 @@ export function TenantSettingsPanel({ tenants, activeTenantId }: { tenants: Tena
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Slug</TableHead>
+                <TableHead>Consumer</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -52,12 +55,22 @@ export function TenantSettingsPanel({ tenants, activeTenantId }: { tenants: Tena
                 <TableRow key={tenant.id}>
                   <TableCell className="font-medium">{tenant.name}</TableCell>
                   <TableCell className="font-mono text-muted-foreground">/{tenant.slug}</TableCell>
+                  <TableCell>
+                    <Select value={tenant.consumerType} disabled={isPending} onValueChange={(value) => run(async () => {
+                      const result = await saveConsumerTypeAction(tenant.id, value);
+                      if (!result.ok) throw new Error(result.error);
+                      router.refresh();
+                    }, "Consumer type saved")}>
+                      <SelectTrigger aria-label={`Consumer for ${tenant.name}`}><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="nextjs">Next.js</SelectItem><SelectItem value="astro">Astro (static)</SelectItem></SelectContent>
+                    </Select>
+                  </TableCell>
                   <TableCell>{tenant.id === activeTenantId ? <Badge variant="secondary">Active</Badge> : null}</TableCell>
                 </TableRow>
               ))}
               {!tenants.length ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No tenants yet.</TableCell>
+                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No tenants yet.</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>

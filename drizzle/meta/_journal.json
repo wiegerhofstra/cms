@@ -120,6 +120,13 @@
       "when": 1793310465051,
       "tag": "0016_page_hierarchy",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793450475179,
+      "tag": "0017_tenant_consumer_type",
+      "breakpoints": true
     }
   ]
 }

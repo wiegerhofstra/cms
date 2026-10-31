@@ -395,3 +395,34 @@ test("page URL configuration and resolved link rendering are included in integra
     assert.ok(html.endsWith("Unavailable</p>"));
   }, "rich-text.ts");
 });
+
+test("Astro exports static build instructions and routes without Next.js runtime handlers or deployment credentials", () => {
+  const astro = generateIntegrationFiles({
+    ...fixture,
+    tenant: { ...fixture.tenant, consumerType: "astro" },
+    models: fixture.models.map((model) => ({ ...model, pageUrl: { pattern: "/[slug]", slugField: "slug" } })),
+    rebuildConfigured: true,
+    revalidation: { configured: true, url: "https://private-coolify.invalid/api/v1/deploy?uuid=private-resource" },
+  });
+  const manifest = JSON.parse(astro["manifest.json"]);
+  assert.equal(manifest.consumerType, "astro");
+  assert.equal(manifest.revalidation, null);
+  assert.deepEqual(manifest.rebuild, { provider: "coolify", configured: true });
+  for (const file of ["revalidation.ts", "examples/revalidate-route.ts", "examples/media-route.ts"]) assert.equal(astro[file], undefined);
+  const spec = JSON.parse(astro["openapi.json"]);
+  assert.equal(spec.webhooks, undefined);
+  assert.equal(spec.components.securitySchemes.revalidationToken, undefined);
+  assert.equal(Object.keys(spec.paths).length, 6);
+  assert.match(astro["examples/astro.config.mjs"], /output: 'static'/);
+  assert.match(astro["examples/astro-pages.astro"], /getStaticPaths/);
+  assert.match(astro["examples/astro-pages.astro"], /iterateEntries/);
+  assert.match(astro["examples/astro-pages.astro"], /entry.url.slice/);
+  assert.match(astro["examples/astro-pages.astro"], /import.meta.env.CMS_ACCESS_TOKEN/);
+  assert.match(astro["INTEGRATION.md"], /force=true/);
+  assert.match(astro["INTEGRATION.md"], /Publishing does not automatically/);
+  assert.match(astro["INTEGRATION.md"], /cannot enumerate all historical/);
+  assert.doesNotMatch(Object.values(astro).join("\n"), /private-coolify|private-resource|next\/cache|handleRevalidation/);
+  assert.doesNotMatch(astro["INTEGRATION.md"], /examples\/media-route|examples\/revalidate-route|app\/\[\[\.\.\.slug/);
+  assert.equal(JSON.parse(files["manifest.json"]).consumerType, "nextjs");
+  assert.ok(files["examples/revalidate-route.ts"]);
+});

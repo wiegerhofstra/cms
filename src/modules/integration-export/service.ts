@@ -11,11 +11,11 @@ import { generateIntegrationFiles } from "./generate";
 export async function exportTenantIntegration(tenantSlug: string, origin: string) {
   // One snapshot, including ALL models (the delivery model-list endpoint is capped at 100).
   return db.transaction(async (tx) => {
-    const [tenant] = await tx.select({ id: tenants.id, name: tenants.name, slug: tenants.slug, defaultLocale: tenants.defaultLocale, locales: tenants.locales })
+    const [tenant] = await tx.select({ id: tenants.id, consumerType: tenants.consumerType, name: tenants.name, slug: tenants.slug, defaultLocale: tenants.defaultLocale, locales: tenants.locales })
       .from(tenants).where(eq(tenants.slug, tenantSlug)).limit(1);
     if (!tenant) throw new CmsError("NOT_FOUND", "Tenant was not found");
     const [revalidation] = await tx.select({ url: tenantRevalidationSettings.url })
-      .from(tenantRevalidationSettings).where(eq(tenantRevalidationSettings.tenantId, tenant.id)).limit(1);
+      .from(tenantRevalidationSettings).where(and(eq(tenantRevalidationSettings.tenantId, tenant.id), eq(tenantRevalidationSettings.consumerType, tenant.consumerType))).limit(1);
 
     const models = await tx.select({
       id: contentModels.id, name: contentModels.name, slug: contentModels.slug, pageUrl: contentModels.pageUrl, status: contentModels.status,
@@ -29,9 +29,10 @@ export async function exportTenantIntegration(tenantSlug: string, origin: string
       .where(and(eq(contentModelFields.tenantId, tenant.id), eq(contentModels.tenantId, tenant.id)));
 
     return generateIntegrationFiles({
-      tenant: { name: tenant.name, slug: tenant.slug, defaultLocale: tenant.defaultLocale, locales: tenant.locales },
+      tenant: { consumerType: tenant.consumerType, name: tenant.name, slug: tenant.slug, defaultLocale: tenant.defaultLocale, locales: tenant.locales },
       origin,
-      revalidation: { configured: Boolean(revalidation), url: revalidation?.url ?? null },
+      revalidation: { configured: tenant.consumerType === "nextjs" && Boolean(revalidation), url: tenant.consumerType === "nextjs" ? revalidation?.url ?? null : null },
+      rebuildConfigured: tenant.consumerType === "astro" && Boolean(revalidation),
       models: models.map((model) => ({
         ...model,
         fields: fields.filter((field) => field.modelId === model.id).map((field) => ({

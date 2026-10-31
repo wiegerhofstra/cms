@@ -56,7 +56,7 @@ function WorkbenchHeader({ shell }: { shell: WorkbenchShellData }) {
         </BreadcrumbList>
       </Breadcrumb>
       {membership && shell.revalidation.configured ? (
-        <RevalidateButton key={membership.tenantId} tenantId={membership.tenantId} tenantName={membership.tenant.name} />
+        <RevalidateButton key={`${membership.tenantId}-${shell.revalidation.consumerType}`} consumerType={shell.revalidation.consumerType} tenantId={membership.tenantId} tenantName={membership.tenant.name} />
       ) : null}
     </header>
   );

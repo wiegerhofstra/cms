@@ -134,6 +134,8 @@ export function ApiReferencePanel({
 }) {
   const [tenantSlug, setTenantSlug] = useState(initialTenantSlug || tenants[0]?.slug || "");
   const [token, setToken] = useState("");
+  const selectedTenant = tenants.find((tenant) => tenant.slug === tenantSlug);
+  const astro = selectedTenant?.consumerType === "astro";
 
   return (
     <div className="grid gap-6">
@@ -193,7 +195,30 @@ export function ApiReferencePanel({
         </CardContent>
       </Card>
 
-      <AgentExportCard tenantSlug={tenantSlug} />
+      <Card>
+        <CardHeader>
+          <CardTitle>{astro ? "Astro · Static site on Coolify" : "Next.js · Hosted on Coolify"}</CardTitle>
+          <CardDescription>The integration guide and bundle below match this tenant’s consumer type.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm text-muted-foreground">
+          {astro ? <>
+            <p>Use <code>{"output: 'static'"}</code> and fetch published content in Astro frontmatter or <code>getStaticPaths()</code> at build time. The bundle includes a static route example with pagination and hierarchical URLs.</p>
+            <p>In Coolify, build from source with <code>npm run build</code> and serve <code>dist</code>. Make <code>CMS_URL</code>, <code>CMS_TENANT_SLUG</code> and <code>CMS_ACCESS_TOKEN</code> available at build time. Keep the token private; never use a <code>PUBLIC_</code> prefix.</p>
+            <p>Configure the Coolify deploy webhook and API token in Website settings. After publishing changes, click Rebuild to queue a fresh build. The website updates after deployment succeeds; follow progress in Coolify. Astro has no revalidation endpoint.</p>
+            <p>Static pages cannot securely call the email API with a private token. Use a separate backend for forms.</p>
+            <a href="https://docs.astro.build/en/guides/data-fetching/" target="_blank" rel="noreferrer" className="underline">Astro build-time data fetching</a>
+          </> : <>
+            <p>Fetch CMS content on the server and keep <code>CMS_ACCESS_TOKEN</code> private. The bundle includes a Next.js route handler for tenant-wide cache revalidation.</p>
+            <p>Set the consumer’s <code>CMS_REVALIDATION_SECRET</code> in Coolify and save the same secret with its revalidation URL in Website settings. Click Revalidate after publishing changes.</p>
+          </>}
+          <div className="flex flex-wrap gap-4">
+            <Link href={`/app/settings/revalidation${selectedTenant ? `?tenant=${selectedTenant.id}` : ""}`} className="underline">Configure website updates</Link>
+            <Link href="/app/settings/tenants" className="underline">Change consumer type</Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AgentExportCard key={tenantSlug} tenantSlug={tenantSlug} />
 
       <section aria-labelledby="available-endpoints" className="grid gap-3">
         <div className="flex flex-wrap items-end justify-between gap-3">

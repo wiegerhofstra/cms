@@ -58,16 +58,21 @@ export function DashboardPanel({ tenantSlug, shell, dashboard }: { tenantSlug: s
             <CardHeader>
               <CardTitle>Website</CardTitle>
               <CardDescription>
-                {shell.revalidation.configured
+                {shell.revalidation.consumerType === "astro" ? (
+                  shell.revalidation.lastRevalidatedAt
+                    ? <>Last build queued <RelativeTime value={shell.revalidation.lastRevalidatedAt} />. Check Coolify for deployment status.</>
+                    : shell.revalidation.configured ? "Ready to rebuild. Click Rebuild after publishing your changes." : "Configure Coolify builds to update this static website."
+                ) : shell.revalidation.configured
                   ? shell.revalidation.lastRevalidatedAt
                     ? <>Last revalidated <RelativeTime value={shell.revalidation.lastRevalidatedAt} /></>
                     : "Not revalidated from the CMS yet."
                   : "Revalidation isn’t set up, so the website refreshes on its own schedule."}
               </CardDescription>
+              {shell.revalidation.lastDeploymentId ? <p className="break-all text-xs text-muted-foreground">Coolify deployment: {shell.revalidation.lastDeploymentId}</p> : null}
             </CardHeader>
             {!shell.revalidation.configured && shell.me.user.role === "admin" ? (
               <CardContent>
-                <Button asChild variant="outline"><Link href="/app/settings/revalidation">Set up revalidation</Link></Button>
+                <Button asChild variant="outline"><Link href="/app/settings/revalidation">Set up website updates</Link></Button>
               </CardContent>
             ) : null}
           </Card>

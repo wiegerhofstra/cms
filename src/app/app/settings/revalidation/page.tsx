@@ -7,7 +7,7 @@ import { getCmsPageData } from "@/lib/cms/ssr";
 import { getRevalidationSettingsForAdmin } from "@/modules/revalidation/service";
 
 export default function SettingsRevalidationPage({ searchParams }: PageProps<"/app/settings/revalidation">) {
-  return <Suspense fallback={<WorkbenchPageFallback label="Loading revalidation settings" />}><RevalidationContent searchParams={searchParams} /></Suspense>;
+  return <Suspense fallback={<WorkbenchPageFallback label="Loading website settings" />}><RevalidationContent searchParams={searchParams} /></Suspense>;
 }
 
 async function RevalidationContent({ searchParams }: Pick<PageProps<"/app/settings/revalidation">, "searchParams">) {
@@ -17,5 +17,5 @@ async function RevalidationContent({ searchParams }: Pick<PageProps<"/app/settin
   const tenant = data.tenants.find((item) => item.id === tenantId);
   if (tenantId && !tenant) notFound();
   const settings = tenant ? await getRevalidationSettingsForAdmin(tenant.id) : null;
-  return <RevalidationSettingsPanel key={`${tenantId}-${settings?.updatedAt}`} tenants={data.tenants} tenant={tenant ?? null} settings={settings} />;
+  return <RevalidationSettingsPanel key={`${tenantId}-${tenant?.consumerType}-${settings?.updatedAt}`} tenants={data.tenants} tenant={tenant ?? null} settings={settings} />;
 }

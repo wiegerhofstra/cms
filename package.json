@@ -20,6 +20,7 @@
     "test:localization": "node --experimental-strip-types --test src/modules/localization/*.test.mjs",
     "test:uploads": "node --experimental-strip-types --test src/modules/uploads/*.test.mjs",
     "test:uploads:integration": "node --experimental-strip-types --conditions=react-server --test src/modules/uploads/*.integration.mjs",
+    "test:revalidation:integration": "node --experimental-strip-types --conditions=react-server --test src/modules/revalidation/*.integration.mjs",
     "test:revalidation": "node --experimental-strip-types --test src/modules/revalidation/*.test.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

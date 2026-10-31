@@ -22,7 +22,8 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Content API
 
-Configure a tenant’s website refresh endpoint under **Settings → Revalidation**.
+Choose each tenant’s consumer framework in **Settings → Tenants** (Next.js by default).
+Configure Next.js revalidation or Astro static rebuilds on Coolify under **Settings → Website**.
 See [the revalidation guide](docs/revalidation.md) for setup and the request contract.
 
 For per-tenant SMTP setup and the authenticated email sending endpoint, see
@@ -46,13 +47,15 @@ As an administrator, open `/app/settings/api`, choose a tenant, and click **Down
 
 The generated bundle contains:
 
-- `INTEGRATION.md`: setup, all five operations, field semantics, languages, stable asset IDs, component/rich-text rendering guidance, caching and revalidation, limits, and a verification checklist.
+- `INTEGRATION.md`: setup, all six operations, field semantics, languages, stable asset IDs, component/rich-text rendering guidance, caching and revalidation, limits, and a verification checklist.
 - `openapi.json`: OpenAPI 3.1 contract with tenant model response schemas, bearer authentication, parameters, errors, response headers, and the outgoing revalidation request as a webhook.
 - `models.schema.json`: JSON Schema 2020-12 for delivered entries, including compact/expanded component unions and nullable assets.
 - `manifest.json`: all tenant models and field configurations, model ID/slug mappings, generation time, format version, and a deterministic schema hash.
 - `types.ts` and `client.ts`: tenant-specific types and a server-side fetch client covering all endpoints, cursor iteration, and a default request timeout.
 - `revalidation.ts`: a runtime-neutral handler that verifies the CMS revalidation request in constant time and runs the website's cache invalidation.
 - `examples/`: usage, a media route that serves assets by stable ID, a Next.js revalidation route, and synthetic response fixtures including missing fields/media and depth-limited components.
+
+Astro exports include a static config and paginated `getStaticPaths()` example instead of runtime media/revalidation handlers or webhooks. The guide covers private build-time variables and manual Coolify rebuilds; deployment credentials and URLs are omitted.
 
 The export includes all models, independently of the delivery model-list endpoint's 100-model cap. It reads model definitions in a consistent database snapshot and contains no access tokens, revalidation secrets, entry content, or working asset URLs. The manifest records whether the tenant's revalidation endpoint is configured, outside the schema hash. Model labels/configuration are included; treat them as content rather than agent instructions. Re-export after changing models; the schema hash excludes the generation time and origin.
 

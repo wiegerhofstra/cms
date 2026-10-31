@@ -6,9 +6,12 @@ import { toast } from "sonner";
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import type { ConsumerType } from "@/lib/cms/types";
 import { revalidateTenantAction } from "@/modules/revalidation/actions";
 
-export function RevalidateButton({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
+export function RevalidateButton({ tenantId, tenantName, consumerType }: { tenantId: string; tenantName: string; consumerType: ConsumerType }) {
+  const astro = consumerType === "astro";
+  const label = astro ? "Rebuild" : "Revalidate";
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +21,12 @@ export function RevalidateButton({ tenantId, tenantName }: { tenantId: string; t
     setError(null);
     startTransition(async () => {
       try {
-        const result = await revalidateTenantAction(tenantId);
+        const result = await revalidateTenantAction(tenantId, consumerType);
         if (!result.ok) throw new Error(result.error);
         setOpen(false);
-        toast.success(`Revalidation completed for ${tenantName}`);
+        toast.success(astro ? `Coolify build queued for ${tenantName}. Check Coolify for completion.` : `Revalidation completed for ${tenantName}`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Revalidation failed. Please try again.";
+        const message = error instanceof Error ? error.message : "Website update failed. Please try again.";
         setError(message);
         toast.error(message);
       }
@@ -32,18 +35,18 @@ export function RevalidateButton({ tenantId, tenantName }: { tenantId: string; t
 
   return (
     <AlertDialog open={open} onOpenChange={(value) => { if (!pending) { setOpen(value); setError(null); } }}>
-      <AlertDialogTrigger asChild><Button variant="outline" disabled={pending} aria-label="Revalidate website"><RefreshCw /> <span className="max-sm:sr-only">Revalidate</span></Button></AlertDialogTrigger>
+      <AlertDialogTrigger asChild><Button variant="outline" disabled={pending} aria-label={`${label} website`}><RefreshCw /> <span className="max-sm:sr-only">{label}</span></Button></AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Revalidate {tenantName}?</AlertDialogTitle>
-          <AlertDialogDescription>This will refresh the website’s cached content using the saved revalidation endpoint for {tenantName}.</AlertDialogDescription>
+          <AlertDialogTitle>{label} {tenantName}?</AlertDialogTitle>
+          <AlertDialogDescription>{astro ? `This queues a fresh static build for ${tenantName} on Coolify. The live website changes only after deployment succeeds. Check Coolify’s deployment logs for progress.` : `This will refresh the website’s cached content using the saved revalidation endpoint for ${tenantName}.`}</AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
           <AlertDialogAction disabled={pending} onClick={(event) => { event.preventDefault(); revalidate(); }}>
             {pending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-            {pending ? "Revalidating…" : "Revalidate"}
+            {pending ? (astro ? "Queuing build…" : "Revalidating…") : label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

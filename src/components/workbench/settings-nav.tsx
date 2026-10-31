@@ -12,7 +12,7 @@ export const settingsLinks = [
   { href: "/app/settings/languages", label: "Languages", icon: Languages },
   { href: "/app/settings/auth", label: "Auth", icon: KeyRound },
   { href: "/app/settings/email", label: "Email", icon: Mail },
-  { href: "/app/settings/revalidation", label: "Revalidation", icon: RefreshCw },
+  { href: "/app/settings/revalidation", label: "Website", icon: RefreshCw },
   { href: "/app/settings/api", label: "API", icon: Braces },
 ];
 

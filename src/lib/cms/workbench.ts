@@ -252,7 +252,7 @@ export const getWorkbenchShell = cache(async (tenantSlug?: string): Promise<Work
 
   const me = serializeMe(context);
   const activeMembership = context.activeMembership ?? context.memberships[0] ?? null;
-  if (!activeMembership) return { me, activeMembership: null, models: [], revalidation: { configured: false, lastRevalidatedAt: null } };
+  if (!activeMembership) return { me, activeMembership: null, models: [], revalidation: { consumerType: "nextjs", lastDeploymentId: null, configured: false, lastRevalidatedAt: null } };
 
   const tenantContext: TenantContext = { ...context, activeMembership, activeTenantId: activeMembership.tenantId };
   const [models, revalidation] = await Promise.all([listModelsForContext(tenantContext), getRevalidationStatus(activeMembership.tenantId)]);
@@ -1100,7 +1100,7 @@ async function listManagedUsersForContext(context: CmsRequestContext): Promise<M
 
 async function listTenantSummariesForContext(context: CmsRequestContext): Promise<TenantSummary[]> {
   requireAdmin(context);
-  return db.select({ id: tenants.id, slug: tenants.slug, name: tenants.name }).from(tenants).orderBy(desc(tenants.createdAt));
+  return db.select({ id: tenants.id, slug: tenants.slug, name: tenants.name, consumerType: tenants.consumerType }).from(tenants).orderBy(desc(tenants.createdAt));
 }
 
 export async function deleteAsset(assetId: string, tenantSlug?: string) {
