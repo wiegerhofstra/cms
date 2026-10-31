@@ -4,6 +4,11 @@ The Content API's `url` and `downloadUrl` now both point to the existing
 `/api/media/{tenantId}/{assetId}/{token}` route. That route serves bytes instead of
 redirecting to an expiring S3 URL. No database migration or external CDN is needed.
 
+The CMS asset library, asset detail previews, editor asset pickers, and download
+links use the same cached media URLs. Upload completion also returns cached media
+URLs, so newly uploaded images take this path immediately. The workbench still
+checks tenant membership before issuing URLs, and pending assets have no media URL.
+
 The route verifies the file-specific capability and queries the live, tenant-scoped
 asset record before serving any bytes, including cached responses, HEAD, and 304.
 Deleted/pending assets and invalid capabilities return an uncached 404. Anyone

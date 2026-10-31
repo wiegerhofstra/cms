@@ -30,7 +30,7 @@ import type {
 } from "@/lib/cms/types";
 import { titleValue } from "@/components/workbench/utils";
 import { getEnv } from "@/lib/env";
-import { deleteS3Object, presignRead, presignUpload } from "@/lib/storage/s3";
+import { deleteS3Object, presignUpload } from "@/lib/storage/s3";
 import { setActiveTenantId } from "@/lib/tenant/active-tenant";
 import { createEntryRevision, getActiveModel, getTenantEntry, sanitizeEntryTranslations, validateEntryData, validateEntryDataForPublish } from "@/modules/entries/service";
 import { lockPagePaths, validatePageUrlConfig } from "@/modules/entries/links";
@@ -42,6 +42,7 @@ import { isUniqueViolation, normalizeFieldInput } from "@/modules/models/fields"
 import { deleteModelField } from "@/modules/models/delete-field";
 import { createModelSchema, fieldInputSchema, modelStatusSchema, moveFieldSchema, updateFieldSchema, updateModelSchema } from "@/modules/models/validation";
 import { extractImageDimensions } from "@/modules/uploads/image-dimensions";
+import { assetDownloadUrl } from "@/modules/uploads/download";
 import { completeUploadSchema, presignUploadSchema, sanitizeFilename, assertAllowedUpload } from "@/modules/uploads/validation";
 import { createUploadToken, parseUploadToken } from "@/modules/uploads/token";
 import { listAccessTokensForContext } from "@/modules/access-tokens/service";
@@ -1247,7 +1248,7 @@ async function assetsWithPreviews(rows: (typeof assets.$inferSelect)[]): Promise
   return Promise.all(
     rows.map(async (asset) => {
       const serialized = serializeAsset(asset);
-      const readUrl = serialized.status === "ready" ? await presignRead({ bucket: serialized.bucket, objectKey: serialized.objectKey, expiresIn: 300 }) : null;
+      const readUrl = serialized.status === "ready" ? assetDownloadUrl(serialized.tenantId, serialized.id) : null;
 
       return {
         ...serialized,
