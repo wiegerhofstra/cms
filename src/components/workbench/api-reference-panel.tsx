@@ -143,10 +143,10 @@ export function ApiReferencePanel({
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <p className="mb-2 text-sm opacity-70">Content delivery API</p>
+              <p className="mb-2 text-sm opacity-70">Content delivery and email API</p>
               <CardTitle className="text-xl">API reference</CardTitle>
               <CardDescription className="mt-1 text-inverse-foreground/70">
-                Read published content over a tenant-scoped, JSON API. Choose an endpoint below to send a live request.
+                Read published content and send email through a tenant-scoped JSON API. Try content requests below or copy the email sending example.
               </CardDescription>
             </div>
             <Badge className="border border-inverse-foreground/20 bg-inverse-foreground/10 text-inverse-foreground">
@@ -236,19 +236,7 @@ export function ApiReferencePanel({
         ))}
       </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Send email</CardTitle>
-          <CardDescription>Submit an email using the selected tenant’s SMTP settings and a token with the email:send permission.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 text-sm">
-          <code className="break-all font-mono">POST /api/email/{tenantSlug || "{tenantSlug}"}/send</code>
-          <p className="text-muted-foreground">Send JSON with to, subject and text. Optional fields: from, replyTo and html. The from address must be allowed in the tenant’s settings; omit it to use the default sender.</p>
-          <pre className="overflow-x-auto rounded-xl bg-muted p-4 font-mono text-xs">{JSON.stringify({ to: "recipient@example.com", subject: "Hello", text: "Hello from the website.", html: "<p>Hello from the website.</p>" }, null, 2)}</pre>
-          <p className="text-muted-foreground">Use Authorization: Bearer and Content-Type: application/json. Supports one recipient per message, up to 512 KiB per request and 30 attempts per minute per tenant. Success returns data.messageId and data.status = &quot;accepted&quot;, confirming SMTP submission.</p>
-          <Link href="/app/settings/email" className="underline underline-offset-4">Configure email and send a test</Link>
-        </CardContent>
-      </Card>
+      <EmailApiCard tenantSlug={tenantSlug} tenantId={selectedTenant?.id} />
 
       <Card size="sm">
         <CardContent className="flex gap-3">
@@ -264,6 +252,77 @@ export function ApiReferencePanel({
       </Card>
     </div>
   );
+}
+
+function EmailApiCard({ tenantSlug, tenantId }: { tenantSlug: string; tenantId?: string }) {
+  const path = `/api/email/${tenantSlug ? encodeURIComponent(tenantSlug) : "{tenantSlug}"}/send`;
+  const body = JSON.stringify({ to: "recipient@example.com", subject: "Website enquiry", text: "Hello from the website.", replyTo: "visitor@example.org" }, null, 2);
+  const curl = [
+    `curl --request POST '${cmsPublicUrl}${path}' \\`,
+    '  --header "Authorization: Bearer $CMS_ACCESS_TOKEN" \\',
+    "  --header 'Content-Type: application/json' \\",
+    `  --data '${body}'`,
+  ].join("\n");
+  const fields = [
+    ["to", "Required", "One plain email address, up to 254 characters."],
+    ["subject", "Required", "Nonblank subject, up to 200 characters after trimming."],
+    ["text", "Required", "Nonblank plain text, up to 100,000 characters. Required even with HTML."],
+    ["html", "Optional", "Nonempty HTML alternative, up to 200,000 characters."],
+    ["from", "Optional", "One allowed sender, optionally with a display name, up to 320 characters. Omit to use the configured sender and name."],
+    ["replyTo", "Optional", "One plain email address, up to 254 characters. Use the visitor’s address here for contact forms."],
+  ];
+  const errors = [
+    ["400", "BAD_REQUEST", "Missing body or malformed JSON."],
+    ["401", "UNAUTHORIZED", "Missing, invalid, expired or revoked token."],
+    ["403", "FORBIDDEN", "Wrong tenant, missing email:send or disallowed sender."],
+    ["409", "EMAIL_NOT_CONFIGURED", "Email disabled, unconfigured or saved credentials unavailable."],
+    ["413", "PAYLOAD_TOO_LARGE", "Request exceeds 512 KiB."],
+    ["415", "BAD_REQUEST", "Content-Type must be application/json."],
+    ["422", "VALIDATION_ERROR", "Invalid fields or unsupported options."],
+    ["429", "TOO_MANY_REQUESTS", "Tenant limit reached. Retry-After: 60 seconds."],
+    ["500", "INTERNAL_SERVER_ERROR", "Unexpected server failure."],
+    ["502", "EMAIL_SEND_FAILED", "SMTP submission failed or recipient rejected."],
+  ];
+  return <Card>
+    <CardHeader>
+      <CardTitle>Send email</CardTitle>
+      <CardDescription>Configure and enable SMTP for this tenant, then use a tenant token with email:send. A content:read token alone cannot send email.</CardDescription>
+    </CardHeader>
+    <CardContent className="grid gap-4 text-sm">
+      <div className="flex items-start gap-3"><Badge>POST</Badge><code className="break-all font-mono">{path}</code></div>
+      <p className="text-muted-foreground">Call from your backend with Authorization: Bearer and Content-Type: application/json. Keep the token on the server. Static Astro sites need a separate backend for contact forms.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <caption className="mb-2 text-left font-medium">JSON request fields</caption>
+          <thead><tr className="border-b"><th className="p-2">Field</th><th className="p-2">Required</th><th className="p-2">Description</th></tr></thead>
+          <tbody>{fields.map(([name, required, description]) => <tr key={name} className="border-b"><td className="p-2 font-mono">{name}</td><td className="p-2">{required}</td><td className="p-2 text-muted-foreground">{description}</td></tr>)}</tbody>
+        </table>
+      </div>
+      <p className="text-muted-foreground">The sender must match the default or an additional allowed sender in Email settings. Header fields reject control characters. Use <code>to</code>, not <code>sendto</code>. Multiple recipients, attachments, CC/BCC, custom envelopes, file/URL body sources and unknown fields are unsupported.</p>
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-3"><p className="font-medium">Request example</p><CopyButton value={curl} label="Copy cURL" /></div>
+        <p className="mb-2 text-muted-foreground">Set CMS_ACCESS_TOKEN to a token with email:send and replace the example recipient before running.</p>
+        <pre className="overflow-x-auto rounded-lg bg-inverse p-4 font-mono text-xs leading-relaxed text-inverse-foreground">{curl}</pre>
+      </div>
+      <div>
+        <p className="mb-2 font-medium">200 response</p>
+        <pre className="overflow-x-auto rounded-lg bg-muted p-4 font-mono text-xs">{JSON.stringify({ data: { messageId: "<message-id@example.com>", status: "accepted" } }, null, 2)}</pre>
+      </div>
+      <p className="text-muted-foreground">Accepted confirms SMTP submission, not inbox delivery. Sending completes during the request. There is no queue, automatic retry, delivery tracking or idempotency guarantee; retrying a timeout may send a duplicate.</p>
+      <p className="text-muted-foreground">Maximum request size: 512 KiB. The limit is 30 SMTP attempts per minute per tenant, shared across tokens and admin tests. Failed SMTP attempts count; validation failures do not. The window starts with the first attempt and resets after one minute.</p>
+      <details className="rounded-lg border p-4">
+        <summary className="cursor-pointer font-medium">Errors and response headers</summary>
+        <div className="mt-3 grid gap-3">
+          <p className="text-muted-foreground">Application responses include Cache-Control: private, no-store and X-Request-Id. Errors return <code>{"{ error: { code, message, requestId } }"}</code>. A 401 also includes WWW-Authenticate: Bearer.</p>
+          <div className="overflow-x-auto"><table className="w-full text-left">
+            <thead><tr className="border-b"><th className="p-2">HTTP</th><th className="p-2">Code</th><th className="p-2">Meaning</th></tr></thead>
+            <tbody>{errors.map(([status, code, meaning]) => <tr key={status} className="border-b"><td className="p-2">{status}</td><td className="p-2 font-mono">{code}</td><td className="p-2 text-muted-foreground">{meaning}</td></tr>)}</tbody>
+          </table></div>
+        </div>
+      </details>
+      <Link href={`/app/settings/email${tenantId ? `?tenant=${tenantId}` : ""}`} className="underline underline-offset-4">Configure email and send a test</Link>
+    </CardContent>
+  </Card>;
 }
 
 function AgentExportCard({ tenantSlug }: { tenantSlug: string }) {

@@ -34,7 +34,7 @@ export type ExportInput = {
   rebuildConfigured?: boolean;
 };
 type Schema = Record<string, unknown>;
-const formatVersion = "1.1.0";
+const formatVersion = "1.2.0";
 const ref = (name: string): Schema => ({ $ref: `#/$defs/${name}` });
 const nullable = (schema: Schema): Schema => ({ anyOf: [schema, { type: "null" }] });
 const object = (properties: Record<string, Schema>, required = Object.keys(properties)): Schema => ({ type: "object", properties, required });
@@ -227,7 +227,7 @@ function openApi(tenantInfo: ExportInput["tenant"], origin: string, definitions:
       ...Object.fromEntries([
         [400, "BAD_REQUEST: invalid query, UUID, cursor, locale or slug filter; expansion limits exceeded."],
         [401, "UNAUTHORIZED: missing, malformed, expired, revoked or unknown token."],
-        [403, "FORBIDDEN: valid token belongs to a different tenant."],
+        [403, "FORBIDDEN: valid token belongs to a different tenant or lacks content:read."],
         [404, "NOT_FOUND: model, published entry or asset unavailable."],
         [500, "INTERNAL_SERVER_ERROR: unexpected server error."],
       ].map(([status, description]) => [status, {
@@ -238,12 +238,45 @@ function openApi(tenantInfo: ExportInput["tenant"], origin: string, definitions:
     },
   });
   const path = "/api/content/{tenantSlug}/models";
+  const emailErrors = [
+    [400, "BAD_REQUEST: missing body or malformed JSON."],
+    [401, "UNAUTHORIZED: missing, invalid, expired or revoked token."],
+    [403, "FORBIDDEN: wrong tenant, missing email:send permission or disallowed sender."],
+    [409, "EMAIL_NOT_CONFIGURED: email disabled, not configured or saved credentials unavailable."],
+    [413, "PAYLOAD_TOO_LARGE: request exceeds 512 KiB."],
+    [415, "BAD_REQUEST: Content-Type must be application/json."],
+    [422, "VALIDATION_ERROR: invalid fields or unsupported options."],
+    [429, "TOO_MANY_REQUESTS: tenant SMTP attempt limit reached."],
+    [500, "INTERNAL_SERVER_ERROR: unexpected server error."],
+    [502, "EMAIL_SEND_FAILED: SMTP submission failed or recipient rejected."],
+  ] as const;
+  const emailHeader = { type: "string", pattern: "^[^\\u0000-\\u001f\\u007f]*$" };
+  const emailAddress = { ...emailHeader, format: "email", maxLength: 254 };
+  const emailExample = { to: "recipient@example.com", subject: "Website enquiry", text: "Hello from the website.", replyTo: "visitor@example.org" };
+  const emailAccepted = { data: { messageId: "<message-id@example.com>", status: "accepted" } };
   return replaceRefs({
     openapi: "3.1.0",
-    info: { title: "CMS Content API", version: formatVersion, description: "Read-only content delivery. This schema snapshot describes one tenant. Unsupported: writes, draft preview, search, filters other than slug, and custom sorting. Translatable fields resolve per ?locale= with fallback to the default language. Assets have stable URLs backed by the CMS disk cache. The revalidate webhook describes the request the CMS sends to your website. Primitive fields pass through stored JSON; x-cms-editorSchema describes expected editor values, not delivery validation." },
+    info: { title: "CMS API", version: formatVersion, description: "Read-only content delivery and tenant email sending. This schema snapshot describes one tenant. Unsupported content operations: writes, draft preview, search, filters other than slug, and custom sorting. Translatable fields resolve per ?locale= with fallback to the default language. Assets have stable URLs backed by the CMS disk cache. The revalidate webhook describes the request the CMS sends to your website. Primitive fields pass through stored JSON; x-cms-editorSchema describes expected editor values, not delivery validation." },
     "x-cms-schemaHash": schemaHash,
     servers: [{ url: origin }],
     paths: {
+      "/api/email/{tenantSlug}/send": { post: {
+        operationId: "sendEmail", summary: "Send an email through the tenant's SMTP server",
+        description: "Requires enabled SMTP settings in Settings → Email and a tenant token with email:send. Call from a trusted backend; static Astro pages need a separate backend for forms. Use replyTo for a visitor's address and omit from to use the configured sender. One recipient, no attachments, CC/BCC, custom envelopes or file/URL body sources. Maximum JSON request size: 512 KiB. There are 30 SMTP attempts per minute per tenant, shared across tokens and admin tests; failed SMTP attempts count, validation failures do not. Sending completes during the request. Accepted confirms SMTP submission, not inbox delivery. No queue, automatic retry, delivery tracking or idempotency guarantee: retrying after a timeout may send a duplicate.",
+        parameters: [tenant], security: [{ emailToken: [] }],
+        requestBody: { required: true, content: { "application/json": { schema: ref("EmailMessage"), example: emailExample } } },
+        responses: {
+          "200": { description: "SMTP server accepted the message", headers, content: { "application/json": { schema: ref("EmailAccepted"), example: emailAccepted } } },
+          ...Object.fromEntries(emailErrors.map(([status, description]) => [status, {
+            description,
+            headers: { ...headers,
+              ...(status === 401 ? { "WWW-Authenticate": { schema: { const: "Bearer", type: "string" } } } : {}),
+              ...(status === 429 ? { "Retry-After": { schema: { const: "60", type: "string" }, description: "Seconds before retrying." } } : {}),
+            },
+            content: { "application/json": { schema: ref("EmailError") } },
+          }])),
+        },
+      } },
       "/api/content/{tenantSlug}/resolve": { get: operation("resolvePage", "Resolve a complete page path", [tenant,
         { ...param("path", "query", { type: "string", maxLength: 2000, pattern: "^/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)?$" }, "Full website path, including any language/prefix. No trailing slash except /."), required: true }, locale, depth,
       ], object({ data: { oneOf: [object({ kind: { const: "page" }, modelSlug: string, entry: entrySchema }), object({ kind: { const: "redirect" }, location: string, status: { const: 308 } })] }, meta: object({ locale: localeMeta, maxDepth: { type: "integer" } }) }), "Returns a published page or a redirect instruction in a 200 JSON envelope. Your website sends the HTTP 308. Old paths resolve directly to the latest URL; unpublished/deleted targets and unknown paths return 404. Locale defaults to the tenant default and is not inferred from the path.") },
@@ -272,9 +305,21 @@ function openApi(tenantInfo: ExportInput["tenant"], origin: string, definitions:
       } },
     },
     components: { securitySchemes: {
-      contentToken: { type: "http", scheme: "bearer", description: "Authorization: Bearer cms_at_<secret>. Use only from a trusted server." },
+      contentToken: { type: "http", scheme: "bearer", description: "Authorization: Bearer cms_at_<secret>. Requires content:read for this tenant. Use only from a trusted server." },
+      emailToken: { type: "http", scheme: "bearer", description: "Authorization: Bearer cms_at_<secret>. Requires email:send for this tenant; content:read alone cannot send email. Use only from a trusted server." },
       revalidationToken: { type: "http", scheme: "bearer", description: "Sent BY the CMS to your revalidation endpoint: the secret saved for this tenant in Settings → Website. Verify it in constant time." },
-    }, schemas: definitions },
+    }, schemas: { ...definitions,
+      EmailMessage: { ...object({
+        to: { ...emailAddress, description: "One plain recipient address, without a display name." },
+        subject: { ...emailHeader, minLength: 1, maxLength: 200, allOf: [{ pattern: "\\S" }], description: "Nonblank subject; trimmed before sending. No control characters." },
+        text: { type: "string", minLength: 1, maxLength: 100_000, pattern: "\\S", description: "Required nonblank plain-text body, even when html is supplied." },
+        html: { type: "string", minLength: 1, maxLength: 200_000, description: "Optional HTML alternative to text." },
+        from: { ...emailHeader, minLength: 1, maxLength: 320, description: "One allowed sender address, optionally with a display name. Omit to use the tenant's default sender and name. Must match the default or an additional allowed sender." },
+        replyTo: { ...emailAddress, description: "One plain reply-to address. Use the visitor's address here for contact forms." },
+      }, ["to", "subject", "text"]), additionalProperties: false },
+      EmailAccepted: object({ data: object({ messageId: string, status: { type: "string", const: "accepted" } }) }),
+      EmailError: object({ error: object({ code: { type: "string", enum: [...new Set(emailErrors.map(([, description]) => description.split(":")[0]))] }, message: string, requestId: string }) }),
+    } },
   });
 }
 
@@ -358,7 +403,7 @@ ${astro ? `Coolify rebuilds: ${rebuildConfigured ? "configured" : "not configure
 
 ## Start here
 
-1. Keep this directory together. Read openapi.json for the six HTTP operations${astro ? "" : " and the revalidation webhook"}, models.schema.json for delivery shapes, and manifest.json for every model/field and the model ID-to-slug mapping.
+1. Keep this directory together. Read openapi.json for the six content GET operations and email POST operation${astro ? "" : " and the revalidation webhook"}, models.schema.json for delivery shapes, and manifest.json for every model/field and the model ID-to-slug mapping.
 2. Configure CMS_URL, CMS_TENANT_SLUG and CMS_ACCESS_TOKEN in your SERVER environment. Obtain a tenant-scoped token from ${origin}/app/settings/auth. Never use a public/browser environment variable for the secret. The export contains no token, revalidation secret, entry content or working asset URLs.
 ${astro ? "3. Copy client.ts, types.ts and rich-text.ts into src/lib/cms/. Fetch only at build time; see Static Astro builds on Coolify and examples/astro-pages.astro." : `3. Copy client.ts, types.ts, rich-text.ts and revalidation.ts into your server code. See examples/usage.ts for all client methods and pagination, examples/media-route.ts for serving assets by ID, and examples/revalidate-route.ts for the revalidation endpoint. The client requires a runtime with fetch and checks envelopes; raw field values still need validation.`}
 4. List models, inspect fields, then fetch published entries. Choose maxDepth explicitly when you need expanded components. Implement a renderer for each component model your application uses.
@@ -367,7 +412,7 @@ ${astro ? "3. Copy client.ts, types.ts and rich-text.ts into src/lib/cms/. Fetch
 ## Authentication and HTTP behavior
 
 Base path: /api/content/{tenantSlug}
-Send Authorization: Bearer cms_at_<secret> on each GET. A valid token for another tenant returns 403. Missing, invalid, expired or revoked tokens return 401. Keep secrets out of URLs and logs.
+Send Authorization: Bearer cms_at_<secret> on each GET with the content:read permission. Email sending requires email:send; a token may have either or both permissions. A valid token for another tenant returns 403. Missing, invalid, expired or revoked tokens return 401. Keep secrets out of URLs and logs.
 
 - GET /models: { data: Model[], meta: { defaultLocale, locales } }; at most 100 models, name order, including archived models, no pagination.
 - GET /models/{modelSlug}: { data: ModelDetail }; fields in position order.
@@ -375,8 +420,69 @@ Send Authorization: Bearer cms_at_<secret> on each GET. A valid token for anothe
 - GET /models/{modelSlug}/entries/{entryId}: { data: Entry, meta: { maxDepth, locale } }; entryId is a UUID, not a slug.
 - GET /assets/{assetId}: { data: Asset }; any ready asset of this tenant with a stable cached media url.
 
-Paths above are relative to /api/content/{tenantSlug}. Encode path segments and query values. Only GET is application-defined; framework-generated HEAD/OPTIONS/405 responses can have a different body.
+Paths above are relative to /api/content/{tenantSlug}. Encode path segments and query values. Content endpoints only define GET; email defines POST separately below. Framework-generated HEAD/OPTIONS/405 responses can have a different body.
 Every application GET response has Cache-Control: private, no-store and X-Request-Id. Errors are { error: { code, message, requestId } }. Codes: BAD_REQUEST (400), UNAUTHORIZED (401), FORBIDDEN (403), NOT_FOUND (404), INTERNAL_SERVER_ERROR (500). A 401 includes WWW-Authenticate: Bearer. Do not blindly retry 400/401/403/404; report the request ID. Network failures and 500s may be retried with a bounded backoff.
+
+## Sending email
+
+POST ${origin}/api/email/${encodeURIComponent(tenant.slug)}/send
+
+Configure and enable the tenant's SMTP settings at ${origin}/app/settings/email. Grant its API token email:send in Settings → Auth. content:read alone cannot send email. The generated client.ts covers content reads; call the email endpoint with fetch from your backend. Static Astro sites need a separate backend for contact forms; never expose the CMS token in browser code.
+
+Send Authorization: Bearer and Content-Type: application/json. Request fields:
+
+| Field | Required | Contract |
+| --- | --- | --- |
+| to | Yes | One plain email address, up to 254 characters. |
+| subject | Yes | Nonblank, up to 200 characters after trimming. |
+| text | Yes | Nonblank plain text, up to 100,000 characters; required even with html. |
+| html | No | Nonempty HTML alternative, up to 200,000 characters. |
+| from | No | One address, optionally with a display name, up to 320 characters. Must be the default or an additional allowed sender. Omit to use the configured sender and name. |
+| replyTo | No | One plain email address, up to 254 characters. Use the visitor's address here for contact forms. |
+
+Header fields reject control characters. Unknown fields, multiple recipients, attachments, CC/BCC, custom envelopes and file/URL body sources are unsupported. The whole JSON request is limited to 512 KiB. Use to, not sendto.
+
+Server-side example (CMS_ACCESS_TOKEN must have email:send):
+
+\`\`\`js
+const response = await fetch(${JSON.stringify(`${origin}/api/email/${encodeURIComponent(tenant.slug)}/send`)}, {
+  method: "POST",
+  headers: {
+    Authorization: \`Bearer \${process.env.CMS_ACCESS_TOKEN}\`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    to: "recipient@example.com",
+    subject: "Website enquiry",
+    text: "Hello from the website.",
+    replyTo: "visitor@example.org",
+  }),
+});
+const result = await response.json();
+if (!response.ok) {
+  throw new Error(\`\${result.error.code}: \${result.error.message} (request \${result.error.requestId})\`);
+}
+// result.data: { messageId: "<message-id@example.com>", status: "accepted" }
+\`\`\`
+
+HTTP 200 means the SMTP server accepted the message, not that it reached the inbox. There is no queue, automatic retry, delivery tracking or idempotency guarantee. Do not automatically retry a timeout: the SMTP server may already have accepted the email.
+
+All application responses include Cache-Control: private, no-store and X-Request-Id. Errors use { error: { code, message, requestId } }:
+
+| HTTP | Code | Meaning |
+| --- | --- | --- |
+| 400 | BAD_REQUEST | Missing body or malformed JSON. |
+| 401 | UNAUTHORIZED | Missing, invalid, expired or revoked token; includes WWW-Authenticate: Bearer. |
+| 403 | FORBIDDEN | Wrong tenant, missing email:send or disallowed sender. |
+| 409 | EMAIL_NOT_CONFIGURED | Email disabled, unconfigured or saved credentials unavailable. |
+| 413 | PAYLOAD_TOO_LARGE | Request exceeds 512 KiB. |
+| 415 | BAD_REQUEST | Content-Type must be application/json. |
+| 422 | VALIDATION_ERROR | Invalid fields or unsupported options. |
+| 429 | TOO_MANY_REQUESTS | Tenant limit reached; includes Retry-After: 60. |
+| 500 | INTERNAL_SERVER_ERROR | Unexpected server failure. |
+| 502 | EMAIL_SEND_FAILED | SMTP submission failed or recipient rejected. |
+
+The limit is 30 SMTP attempts per minute per tenant, shared across all tokens and admin tests. Failed SMTP attempts count; validation failures do not. The window starts with the first attempt and resets after one minute.
 
 ## Pagination and published content
 
@@ -384,7 +490,7 @@ limit defaults to 20, range 1–100. Pass meta.nextCursor unchanged until it is 
 
 Only published, non-deleted entries are delivered. Collections exclude child entries; a published child is accessible by model slug and UUID. To find an entry by its URL slug, pass slug (and slugField when the model has several slug fields) to listEntries, or call findEntryBySlug in client.ts. Translatable slugs match the slug in the requested locale, falling back to the default-language slug, so pass the same locale you render. A slug is only guaranteed unique when its field has config.unique; otherwise several entries can match (newest first).
 
-There is no write API, draft preview, search, other field filtering or custom sorting. Do not invent query parameters for these features. If needed, paginate and filter server-side; account for the cost.
+There is no content write API, draft preview, search, other field filtering or custom sorting. Do not invent query parameters for these features. If needed, paginate and filter server-side; account for the cost.
 
 ## Languages
 

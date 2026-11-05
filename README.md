@@ -47,11 +47,11 @@ As an administrator, open `/app/settings/api`, choose a tenant, and click **Down
 
 The generated bundle contains:
 
-- `INTEGRATION.md`: setup, all six operations, field semantics, languages, stable asset IDs, component/rich-text rendering guidance, caching and revalidation, limits, and a verification checklist.
-- `openapi.json`: OpenAPI 3.1 contract with tenant model response schemas, bearer authentication, parameters, errors, response headers, and the outgoing revalidation request as a webhook.
+- `INTEGRATION.md`: setup, all six content operations, email sending with a server-side example, field semantics, languages, stable asset IDs, component/rich-text rendering guidance, caching and revalidation, limits, and a verification checklist.
+- `openapi.json`: OpenAPI 3.1 contract with tenant model response schemas, the email sending request and responses, bearer permissions, parameters, errors, response headers, and the outgoing revalidation request as a webhook.
 - `models.schema.json`: JSON Schema 2020-12 for delivered entries, including compact/expanded component unions and nullable assets.
 - `manifest.json`: all tenant models and field configurations, model ID/slug mappings, generation time, format version, and a deterministic schema hash.
-- `types.ts` and `client.ts`: tenant-specific types and a server-side fetch client covering all endpoints, cursor iteration, and a default request timeout.
+- `types.ts` and `client.ts`: tenant-specific types and a server-side fetch client covering all content endpoints, cursor iteration, and a default request timeout. Use the guide's backend fetch example for email sending.
 - `revalidation.ts`: a runtime-neutral handler that verifies the CMS revalidation request in constant time and runs the website's cache invalidation.
 - `examples/`: usage, a media route that serves assets by stable ID, a Next.js revalidation route, and synthetic response fixtures including missing fields/media and depth-limited components.
 
@@ -153,6 +153,9 @@ All endpoints are relative to the API origin, `https://cms.fourd.nl`. Generated 
 | `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries` | A cursor-paginated list of published, top-level entries. Accepts `limit`, `cursor`, `maxDepth`, `locale`, and `slug` (with `slugField` when the model has several slug fields) to look up entries by slug. |
 | `GET` | `/api/content/{tenantSlug}/models/{modelSlug}/entries/{entryId}` | One published entry. `entryId` must be a UUID. Accepts `maxDepth` and `locale`. |
 | `GET` | `/api/content/{tenantSlug}/assets/{assetId}` | One ready asset with stable `url` and `downloadUrl` values backed by the CMS disk cache. |
+| `POST` | `/api/email/{tenantSlug}/send` | Send through the tenant's configured SMTP server. Requires `email:send`; returns `data.messageId` and `data.status: "accepted"`. |
+
+Email sending requires enabled SMTP settings under **Settings → Email**, a tenant token with `email:send`, and `Content-Type: application/json`. Required fields are `to`, `subject`, and `text`; optional fields are `from`, `replyTo`, and `html`. Call from your backend and use `replyTo` for a contact-form visitor's address. The request limit is 512 KiB and the SMTP attempt limit is 30 per minute per tenant. Acceptance confirms SMTP submission, not inbox delivery; retrying a timeout may send a duplicate. See [the email API contract](docs/email.md#send-endpoint) for field limits, examples, responses, and errors, or download the OpenAPI contract from **Settings → API**.
 
 The model list returns objects with `id`, `name`, `slug`, `status`, `createdAt`, and `updatedAt`. Model detail adds a `fields` array. Each field contains `id`, `key`, `label`, `type`, `required`, `position`, `config`, `isList`, `isTitle`, and `targetModelIds`.
 

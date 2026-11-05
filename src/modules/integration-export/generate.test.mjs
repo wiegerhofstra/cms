@@ -90,9 +90,10 @@ test("schemas reject wrong envelopes, wrong model targets and malformed delivere
 test("OpenAPI covers all six GET operations with resolvable schemas, security, limits and matching examples", () => {
   const spec = JSON.parse(files["openapi.json"]);
   assert.equal(spec.openapi, "3.1.0");
-  assert.equal(Object.keys(spec.paths).length, 6);
+  assert.equal(Object.keys(spec.paths).length, 7);
   assert.equal(JSON.stringify(spec).includes("#/$defs/"), false);
   for (const [route, item] of Object.entries(spec.paths)) {
+    if (!item.get) continue;
     const op = item.get;
     assert.deepEqual(op.security, [{ contentToken: [] }]);
     assert.equal(op.parameters.find((parameter) => parameter.name === "tenantSlug").required, true);
@@ -110,6 +111,49 @@ test("OpenAPI covers all six GET operations with resolvable schemas, security, l
   const webhook = spec.webhooks.revalidate.post;
   assert.deepEqual(webhook.security, [{ revalidationToken: [] }]);
   assert.equal(spec.components.securitySchemes.revalidationToken.scheme, "bearer");
+});
+
+test("Next.js and Astro exports document email requests, accepted responses and every error with valid schemas", () => {
+  for (const consumerType of ["nextjs", "astro"]) {
+    const exported = generateIntegrationFiles({ ...fixture, tenant: { ...fixture.tenant, consumerType } });
+    const spec = JSON.parse(exported["openapi.json"]);
+    const op = spec.paths["/api/email/{tenantSlug}/send"].post;
+    assert.equal(op.operationId, "sendEmail");
+    assert.deepEqual(op.security, [{ emailToken: [] }]);
+    assert.match(spec.components.securitySchemes.emailToken.description, /email:send/);
+    assert.equal(op.parameters.find((parameter) => parameter.name === "tenantSlug").required, true);
+    assert.equal(op.requestBody.required, true);
+    const request = op.requestBody.content["application/json"];
+    const validateRequest = ajv.compile({ ...request.schema, components: spec.components });
+    assert.equal(validateRequest(request.example), true, JSON.stringify(validateRequest.errors));
+    for (const override of [{ to: ["recipient@example.com"] }, { to: "invalid" }, { subject: " " }, { subject: "x".repeat(201) }, { subject: "hello\r\nBcc: attacker@example.com" }, { text: " " }, { text: "x".repeat(100001) }, { html: "" }, { html: "x".repeat(200001) }, { attachments: [] }, { sendto: "recipient@example.com" }]) {
+      assert.equal(validateRequest({ ...request.example, ...override }), false);
+    }
+    for (const field of ["to", "subject", "text"]) {
+      const incomplete = { ...request.example };
+      delete incomplete[field];
+      assert.equal(validateRequest(incomplete), false);
+    }
+    const accepted = op.responses[200].content["application/json"];
+    const validateAccepted = ajv.compile({ ...accepted.schema, components: spec.components });
+    assert.equal(validateAccepted(accepted.example), true);
+    assert.equal(validateAccepted({ data: { messageId: "id", status: "delivered" } }), false);
+    assert.deepEqual(Object.keys(op.responses), ["200", "400", "401", "403", "409", "413", "415", "422", "429", "500", "502"]);
+    for (const [status, response] of Object.entries(op.responses)) {
+      assert.equal(response.headers["Cache-Control"].schema.const, "private, no-store");
+      assert.ok(response.headers["X-Request-Id"]);
+      if (status === "200") continue;
+      const validateError = ajv.compile({ ...response.content["application/json"].schema, components: spec.components });
+      assert.equal(validateError({ error: { code: response.description.split(":")[0], message: "Example failure", requestId: "request-1" } }), true);
+    }
+    assert.equal(op.responses[401].headers["WWW-Authenticate"].schema.const, "Bearer");
+    assert.equal(op.responses[429].headers["Retry-After"].schema.const, "60");
+    assert.match(exported["INTEGRATION.md"], /POST https:\/\/cms.example.invalid\/api\/email\/example\/send/);
+    assert.match(exported["INTEGRATION.md"], /email:send/);
+    assert.match(exported["INTEGRATION.md"], /Bearer \$\{process.env.CMS_ACCESS_TOKEN\}/);
+    assert.match(exported["INTEGRATION.md"], /Static Astro sites need a separate backend/);
+    assert.match(exported["INTEGRATION.md"], /Do not automatically retry a timeout/);
+  }
 });
 
 test("schema hash is stable across model/config key ordering, changes with contract, and supports empty or large tenants", () => {
@@ -412,7 +456,7 @@ test("Astro exports static build instructions and routes without Next.js runtime
   const spec = JSON.parse(astro["openapi.json"]);
   assert.equal(spec.webhooks, undefined);
   assert.equal(spec.components.securitySchemes.revalidationToken, undefined);
-  assert.equal(Object.keys(spec.paths).length, 6);
+  assert.equal(Object.keys(spec.paths).length, 7);
   assert.match(astro["examples/astro.config.mjs"], /output: 'static'/);
   assert.match(astro["examples/astro-pages.astro"], /getStaticPaths/);
   assert.match(astro["examples/astro-pages.astro"], /iterateEntries/);
