@@ -15,7 +15,7 @@ const settings = {
 const message = { to: "recipient@example.com", subject: "Hello", text: "Plain text", html: "<p>HTML</p>" };
 
 test("SMTP passwords are randomized, authenticated and bound to a tenant and key", () => {
-  const key = randomBytes(32).toString("base64");
+  const key = randomBytes(32).toString("hex");
   const ciphertext = encryptEmailPassword(" password with spaces ", "tenant-a", key);
   assert.equal(decryptEmailPassword(ciphertext, "tenant-a", key), " password with spaces ");
   assert.notEqual(encryptEmailPassword(" password with spaces ", "tenant-a", key), ciphertext);
@@ -29,6 +29,30 @@ test("SMTP passwords are randomized, authenticated and bound to a tenant and key
   assert.throws(() => decryptEmailPassword(parts.join(":"), "tenant-a", key));
   assert.equal(emailCredentialsReady("bad-key"), false);
   assert.equal(emailCredentialsReady(key), true);
+});
+
+test("SMTP credential storage uses BETTER_AUTH_SECRET and fails closed when it is missing or invalid", () => {
+  const previous = process.env.BETTER_AUTH_SECRET;
+  try {
+    process.env.BETTER_AUTH_SECRET = randomBytes(32).toString("hex");
+    assert.equal(emailCredentialsReady(), true);
+    const ciphertext = encryptEmailPassword("smtp-password", "tenant-a");
+    assert.equal(decryptEmailPassword(ciphertext, "tenant-a"), "smtp-password");
+    process.env.BETTER_AUTH_SECRET = randomBytes(32).toString("hex");
+    assert.throws(() => decryptEmailPassword(ciphertext, "tenant-a"));
+    for (const secret of [undefined, "", "x".repeat(31)]) {
+      if (secret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = secret;
+      assert.equal(emailCredentialsReady(), false);
+      assert.throws(() => encryptEmailPassword("smtp-password", "tenant-a"));
+      assert.throws(() => decryptEmailPassword(ciphertext, "tenant-a"));
+    }
+    process.env.BETTER_AUTH_SECRET = "x".repeat(32);
+    assert.equal(emailCredentialsReady(), true);
+  } finally {
+    if (previous === undefined) delete process.env.BETTER_AUTH_SECRET;
+    else process.env.BETTER_AUTH_SECRET = previous;
+  }
 });
 
 test("SMTP settings require valid addresses, ports and a TLS name for IP hosts", () => {

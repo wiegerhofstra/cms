@@ -42,7 +42,7 @@ export async function getEmailSettingsForAdmin(tenantId: string): Promise<EmailS
 export async function saveEmailSettings(tenantId: string, input: unknown) {
   await requireEmailAdmin(tenantId);
   const { password, ...settings } = parseEmailInput(emailSettingsSchema, input);
-  if (!emailCredentialsReady()) throw new CmsError("INTERNAL_SERVER_ERROR", "Email credential storage is unavailable. Configure EMAIL_ENCRYPTION_KEY on the server.");
+  if (!emailCredentialsReady()) throw new CmsError("INTERNAL_SERVER_ERROR", "Email credential storage is unavailable. Configure BETTER_AUTH_SECRET on the server.");
   const existing = await readSettings(tenantId);
   if (!password && !existing?.encryptedPassword) throw new CmsError("VALIDATION_ERROR", "An SMTP password is required for the first save");
   // Preserve the password in SQL when unchanged, including during concurrent saves.

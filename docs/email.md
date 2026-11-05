@@ -5,12 +5,12 @@ Administrators configure one SMTP connection per tenant at **Settings → Email*
 ## Setup
 
 1. Install dependencies and apply migrations: `npm install && npm run db:migrate`.
-2. Generate a key with `openssl rand -base64 32` and set `EMAIL_ENCRYPTION_KEY` on the server. Use the same key on every app instance. Restart the server after changing environment variables.
+2. Email credential storage uses the server’s existing `BETTER_AUTH_SECRET` (at least 32 characters); no separate email encryption key is needed. Use the same secret on every app instance. Restart the server after changing environment variables.
 3. In Settings → Email, select the tenant and enter its SMTP host, port, encryption, username, password, and default sender. Default: port 587 with required STARTTLS. Port 465 normally uses TLS from connection start. Certificates are always validated; plaintext SMTP is not supported.
 4. Save and use **Test connection** to check connectivity and authentication. Enable sending, save, and use **Send test email** to submit an actual message to the entered recipient.
 5. In Settings → Auth, create or edit a token for that tenant and grant **Send email** (`email:send`). Tokens may have email access, content access, or both. Existing tokens retain only `content:read` after migration.
 
-Passwords use AES-256-GCM authenticated encryption, bound to the tenant ID. The browser receives only a `hasPassword` flag, never the saved password or ciphertext. Leaving the password blank preserves it; entering a new value replaces it. Back up the encryption key separately from the database. Changing or losing the key makes existing passwords unreadable; save new SMTP passwords for each tenant after a key change.
+Passwords use AES-256-GCM authenticated encryption, bound to the tenant ID, with an email-specific key derived from `BETTER_AUTH_SECRET` using HKDF-SHA256. The browser receives only a `hasPassword` flag, never the saved password or ciphertext. Leaving the password blank preserves it; entering a new value replaces it. Back up `BETTER_AUTH_SECRET` separately from the database. Changing or losing it makes existing passwords unreadable; save new SMTP passwords for each tenant after changing the secret.
 
 The optional TLS server name is required when the SMTP host is an IP address. It must match the provider's certificate. Additional allowed senders are exact email addresses (up to 20); the default sender is always allowed. Configure addresses your SMTP provider has authorized. For contact forms, use the website's configured sender and put the visitor's address in `replyTo`.
 

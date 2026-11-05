@@ -23,7 +23,7 @@ test("email API integration: tenant isolation, permissions, TLS SMTP, disabled s
   const directory = mkdtempSync(join(tmpdir(), "cms-email-test-"));
   const certificate = join(directory, "cert.pem");
   const keyPath = join(directory, "key.pem");
-  const encryptionKey = randomBytes(32).toString("base64");
+  const authSecret = randomBytes(32).toString("hex");
   let app;
   let smtp;
   const sockets = new Set();
@@ -82,7 +82,7 @@ test("email API integration: tenant isolation, permissions, TLS SMTP, disabled s
   await new Promise((resolve) => reservation.close(resolve));
   const origin = `http://127.0.0.1:${appPort}`;
   app = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(appPort)], {
-    env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate, EMAIL_ENCRYPTION_KEY: encryptionKey }, stdio: "ignore",
+    env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate, BETTER_AUTH_SECRET: authSecret }, stdio: "ignore",
   });
   let ready = false;
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -111,7 +111,7 @@ test("email API integration: tenant isolation, permissions, TLS SMTP, disabled s
     assert.equal((await send(sendToken)).status, 409);
     assert.equal(received.length, 0);
   });
-  await db.query("INSERT INTO tenant_email_settings (tenant_id, enabled, host, port, encryption, username, encrypted_password, from_email, from_name, allowed_from, servername) VALUES ($1, true, '127.0.0.1', $2, 'tls', 'smtp-user', $3, 'website@example.com', 'Website', ARRAY['support@example.com'], 'localhost')", [tenantIds[0], smtpPort, encryptEmailPassword("smtp-password", tenantIds[0], encryptionKey)]);
+  await db.query("INSERT INTO tenant_email_settings (tenant_id, enabled, host, port, encryption, username, encrypted_password, from_email, from_name, allowed_from, servername) VALUES ($1, true, '127.0.0.1', $2, 'tls', 'smtp-user', $3, 'website@example.com', 'Website', ARRAY['support@example.com'], 'localhost')", [tenantIds[0], smtpPort, encryptEmailPassword("smtp-password", tenantIds[0], authSecret)]);
   await t.test("the real TLS SMTP server receives both bodies, the default sender and reply-to", async () => {
     const response = await send(sendToken);
     assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
