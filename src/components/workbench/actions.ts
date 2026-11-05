@@ -181,6 +181,18 @@ export async function loadComponentEntryFormAction(tenantSlug: string, modelId: 
   return { model, fields: data.fields, assets: data.assets, componentReferences: data.componentReferences, localization: data.localization };
 }
 
+export async function createComponentEntryAction(tenantSlug: string, modelId: string, data: Record<string, unknown>, translations: EntryTranslations, pageParentId: string | null, status: "draft" | "published") {
+  let result;
+  try {
+    result = await createEntry(modelId, data, translations, tenantSlug, pageParentId, status);
+  } catch (error) {
+    if (error instanceof CmsError && error.status < 500) return { error: error.message };
+    throw error;
+  }
+  refresh();
+  return result;
+}
+
 export async function searchEntriesAction(tenantSlug: string, modelId: string, query: string) {
   const result = await listEntries(modelId, query, tenantSlug);
   return result.entries;

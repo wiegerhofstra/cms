@@ -837,7 +837,8 @@ export async function listEntries(modelId: string, query = "", tenantSlug?: stri
   return { entries: await listEntriesForContext(context, modelId, query), nextCursor: null };
 }
 
-export async function createEntry(modelId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string, pageParentId?: string | null) {
+export async function createEntry(modelId: string, input: unknown, translationsInput?: unknown, tenantSlug?: string, pageParentId?: string | null, statusInput: "draft" | "published" = "draft") {
+  const status = parseInput(entryStatusSchema, statusInput);
   const [context, data] = await Promise.all([
     requireTenantContext(crypto.randomUUID(), tenantSlug),
     Promise.resolve(parseInput(entryDataSchema, { data: input, translations: translationsInput, pageParentId })),
@@ -848,9 +849,11 @@ export async function createEntry(modelId: string, input: unknown, translationsI
     await assertValidPageParent(tx, context.activeTenantId, modelId, data.pageParentId);
     const translations = await sanitizeEntryTranslations(tx, context.activeTenantId, modelId, data.translations);
     const [createdEntry] = await tx.insert(contentEntries)
-      .values({ tenantId: context.activeTenantId, modelId, data: data.data, translations, pageParentId: data.pageParentId ?? null, createdBy: context.user.id, updatedBy: context.user.id }).returning();
+      .values({ tenantId: context.activeTenantId, modelId, data: data.data, translations, pageParentId: data.pageParentId ?? null, status, publishedAt: status === "published" ? new Date() : null, createdBy: context.user.id, updatedBy: context.user.id }).returning();
     if (!createdEntry) throw new ApiError("INTERNAL_SERVER_ERROR", "Entry could not be created");
-    await validateEntryData(tx, context.activeTenantId, modelId, data.data, createdEntry.id, translations);
+    // Publication validation shares the transaction, so a failure leaves no partial draft behind.
+    const validate = status === "published" ? validateEntryDataForPublish : validateEntryData;
+    await validate(tx, context.activeTenantId, modelId, data.data, createdEntry.id, translations);
     await validatePageGraph(tx, context.activeTenantId, await loadPageGraph(tx, context.activeTenantId));
     await createEntryRevision(tx, { tenantId: context.activeTenantId, entryId: createdEntry.id, data: createdEntry.data, translations, userId: context.user.id });
     return createdEntry;

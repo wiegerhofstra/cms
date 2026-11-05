@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition, type DragEvent, type ReactNode } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronRight, FileIcon, ImageIcon, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,8 +22,9 @@ import { cn } from "@/lib/utils";
 import { isEmptyLocalizedValue, isLocalizedField, localeLabel } from "@/modules/localization/locales";
 import { allowedAssetTypes, assetAcceptAttribute, describeAllowedAssetTypes, isAssetTypeAllowed } from "@/modules/uploads/asset-types";
 import type { ComponentReferenceList } from "./types";
-import { createEntryAction, loadComponentEntryFormAction } from "./actions";
+import { createComponentEntryAction, loadComponentEntryFormAction } from "./actions";
 import { PageHierarchyFields } from "./page-hierarchy-fields";
+import { EntryStatusLabel } from "./entry-status";
 import { RichTextEditor } from "./rich-text-editor";
 import { uploadAsset } from "./upload-asset";
 import { createDefaultEntryData, entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, normalizeEntryData, normalizeTranslations, numberInputValue, parseJsonObject, stringValue } from "./utils";
@@ -617,6 +619,7 @@ function ComponentFieldInput({ tenantSlug, field, referenceLists: loadedReferenc
             return (
             <SelectedComponentEntry
               key={entryId}
+              tenantSlug={tenantSlug}
               entryId={entryId}
               entry={selectedEntry?.entry ?? null}
               modelName={selectedEntry?.referenceList.modelName ?? "Unknown model"}
@@ -648,13 +651,27 @@ function ComponentFieldInput({ tenantSlug, field, referenceLists: loadedReferenc
   );
 }
 
-function SelectedComponentEntry({ entryId, entry, modelName, titleField, canMove, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onRemove }: { entryId: string; entry: ContentEntry | null; modelName: string; titleField: ContentField | null; canMove: boolean; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void; onRemove: () => void }) {
+function SelectedComponentEntry({ tenantSlug, entryId, entry, modelName, titleField, canMove, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onRemove }: { tenantSlug: string; entryId: string; entry: ContentEntry | null; modelName: string; titleField: ContentField | null; canMove: boolean; canMoveUp: boolean; canMoveDown: boolean; onMoveUp: () => void; onMoveDown: () => void; onRemove: () => void }) {
+  const details = <>
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="truncate font-medium group-hover:underline">{entry ? entryTitle(entry, titleField) : entryId}</p>
+      <Badge variant="outline">{modelName}</Badge>
+      {entry && <span className="text-xs"><EntryStatusLabel status={entry.status} /></span>}
+    </div>
+    <p className="truncate font-mono text-xs text-muted-foreground">{entryId}</p>
+  </>;
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2"><p className="truncate font-medium">{entry ? entryTitle(entry, titleField) : entryId}</p><Badge variant="outline">{modelName}</Badge></div>
-        <p className="truncate font-mono text-xs text-muted-foreground">{entryId}</p>
-      </div>
+      {entry ? (
+        <Link
+          href={`/app/${tenantSlug}/entries/${entry.modelId}/${entry.id}`}
+          aria-label={`Edit ${entryTitle(entry, titleField)} (${entry.status})`}
+          className="group min-w-0 flex-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {details}
+        </Link>
+      ) : <div className="min-w-0 flex-1">{details}</div>}
       <div className="flex gap-1">
         {canMove && <Button size="icon-sm" variant="ghost" disabled={!canMoveUp} onClick={onMoveUp}><ArrowUp /><span className="sr-only">Move up</span></Button>}
         {canMove && <Button size="icon-sm" variant="ghost" disabled={!canMoveDown} onClick={onMoveDown}><ArrowDown /><span className="sr-only">Move down</span></Button>}
@@ -718,6 +735,7 @@ function CreateComponentEntryDialog({ tenantSlug, referenceList, onCancel, onCre
   const [pageParentId, setPageParentId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [pendingStatus, setPendingStatus] = useState<"draft" | "published">("draft");
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
@@ -734,14 +752,19 @@ function CreateComponentEntryDialog({ tenantSlug, referenceList, onCancel, onCre
 
   const missingFields = form ? missingRequiredFields(form.fields, data) : [];
 
-  function create() {
+  function create(status: "draft" | "published") {
     if (!form || isPending || missingFields.length) return;
     setError("");
+    setPendingStatus(status);
     startTransition(async () => {
       try {
-        const result = await createEntryAction(tenantSlug, form.model.id, normalizeEntryData(form.fields, data), normalizeTranslations(form.fields, translations), pageParentId);
+        const result = await createComponentEntryAction(tenantSlug, form.model.id, normalizeEntryData(form.fields, data), normalizeTranslations(form.fields, translations), pageParentId, status);
+        if ("error" in result) {
+          setError(result.error);
+          return;
+        }
         onCreated(result.entry);
-        toast.success(`${referenceList.modelName} created and added`);
+        toast.success(status === "published" ? `${referenceList.modelName} published and added` : `${referenceList.modelName} draft created and added`);
       } catch (error) {
         setError(error instanceof Error ? error.message : "Could not create component");
       }
@@ -758,13 +781,13 @@ function CreateComponentEntryDialog({ tenantSlug, referenceList, onCancel, onCre
           if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
             event.preventDefault();
             event.stopPropagation();
-            create();
+            create("draft");
           }
         }}
       >
         <DialogHeader>
           <DialogTitle>Create new {referenceList.modelName}</DialogTitle>
-          <DialogDescription>Create a draft component and add it to your content. Your current edits will be kept.</DialogDescription>
+          <DialogDescription>Create a component as a draft or publish it for your website. It will be added to this entry; save the entry separately to keep your changes.</DialogDescription>
         </DialogHeader>
         {!form && !error && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading fields…</p>}
         {form && <fieldset disabled={isPending} className="min-w-0 space-y-6">
@@ -775,7 +798,10 @@ function CreateComponentEntryDialog({ tenantSlug, referenceList, onCancel, onCre
         {missingFields.length > 0 && <p className="text-sm text-muted-foreground">Required: {missingFields.map((field) => field.label).join(", ")}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={isPending} onClick={onCancel}>Cancel</Button>
-          {!form && error ? <Button type="button" onClick={() => { setError(""); setLoadAttempt((attempt) => attempt + 1); }}>Retry</Button> : <Button type="button" disabled={!form || isPending || missingFields.length > 0} onClick={create}>{isPending ? "Creating…" : "Create and add"}</Button>}
+          {!form && error ? <Button type="button" onClick={() => { setError(""); setLoadAttempt((attempt) => attempt + 1); }}>Retry</Button> : <>
+            <Button type="button" variant="outline" title="Create draft and add (Ctrl+S)" disabled={!form || isPending || missingFields.length > 0} onClick={() => create("draft")}>{isPending && pendingStatus === "draft" ? "Creating draft…" : "Create draft and add"}</Button>
+            <Button type="button" disabled={!form || isPending || missingFields.length > 0} onClick={() => create("published")}>{isPending && pendingStatus === "published" ? "Publishing…" : "Publish and add"}</Button>
+          </>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
