@@ -17,6 +17,7 @@ import {
   deleteField,
   deleteManagedUser,
   deleteModel,
+  getWorkbenchData,
   listEntries,
   moveField,
   presignAssetUpload,
@@ -171,6 +172,13 @@ export async function createEntryAction(tenantSlug: string, modelId: string, dat
   const result = await createEntry(modelId, data, translations, tenantSlug, pageParentId);
   refresh();
   return result;
+}
+
+export async function loadComponentEntryFormAction(tenantSlug: string, modelId: string) {
+  const data = await getWorkbenchData({ tenantSlug, modelId, view: "entry-new" });
+  const model = data.models.find((model) => model.id === modelId);
+  if (!model || model.status !== "active") throw new CmsError("NOT_FOUND", "An active component model was not found");
+  return { model, fields: data.fields, assets: data.assets, componentReferences: data.componentReferences, localization: data.localization };
 }
 
 export async function searchEntriesAction(tenantSlug: string, modelId: string, query: string) {

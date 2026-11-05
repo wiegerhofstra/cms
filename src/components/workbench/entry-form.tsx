@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type DragEvent, type ReactNode } from "react";
 import Image from "next/image";
 import { ArrowDown, ArrowUp, ChevronRight, FileIcon, ImageIcon, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -21,9 +21,11 @@ import { cn } from "@/lib/utils";
 import { isEmptyLocalizedValue, isLocalizedField, localeLabel } from "@/modules/localization/locales";
 import { allowedAssetTypes, assetAcceptAttribute, describeAllowedAssetTypes, isAssetTypeAllowed } from "@/modules/uploads/asset-types";
 import type { ComponentReferenceList } from "./types";
+import { createEntryAction, loadComponentEntryFormAction } from "./actions";
+import { PageHierarchyFields } from "./page-hierarchy-fields";
 import { RichTextEditor } from "./rich-text-editor";
 import { uploadAsset } from "./upload-asset";
-import { entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, numberInputValue, parseJsonObject, stringValue } from "./utils";
+import { createDefaultEntryData, entryTitle, fieldHelpText, formatJson, getEnumOptions, isHiddenField, missingRequiredFields, normalizeEntryData, normalizeTranslations, numberInputValue, parseJsonObject, stringValue } from "./utils";
 
 type EntryFormProps = {
   siblingSlugField?: string | null;
@@ -279,7 +281,7 @@ function EntryFieldInput({ tenantSlug, locale, field, assets, componentReference
 
   if (field.type === "enum") return <EnumFieldInput field={field} value={value} onChange={onChange} />;
   if (field.type === "asset") return <AssetFieldInput label={<EntryFieldLabel field={field} addon={labelAddon} />} field={field} assets={assets} value={value} onChange={onChange} onUpload={onUpload} note={note} />;
-  if (field.type === "component") return <ComponentFieldInput field={field} referenceLists={componentReferences.filter((referenceList) => referenceList.fieldId === field.id)} value={value} onChange={onChange} />;
+  if (field.type === "component") return <ComponentFieldInput tenantSlug={tenantSlug} field={field} referenceLists={componentReferences.filter((referenceList) => referenceList.fieldId === field.id)} value={value} onChange={onChange} />;
 
   return (
     <Field>
@@ -553,8 +555,15 @@ function AssetPickerItem({ asset, selected }: { asset: AssetWithPreview; selecte
   );
 }
 
-function ComponentFieldInput({ field, referenceLists, value, onChange }: { field: ContentField; referenceLists: ComponentReferenceList[]; value: unknown; onChange: (value: unknown) => void }) {
+function ComponentFieldInput({ tenantSlug, field, referenceLists: loadedReferenceLists, value, onChange }: { tenantSlug: string; field: ContentField; referenceLists: ComponentReferenceList[]; value: unknown; onChange: (value: unknown) => void }) {
   const [open, setOpen] = useState(false);
+  const [creatingModel, setCreatingModel] = useState<ComponentReferenceList | null>(null);
+  const [createdEntries, setCreatedEntries] = useState<ContentEntry[]>([]);
+  // Keep new entries visible immediately, including when the server's reference list is capped.
+  const referenceLists = loadedReferenceLists.map((list) => ({ ...list, entries: [
+    ...createdEntries.filter((entry) => entry.modelId === list.modelId && !list.entries.some((loaded) => loaded.id === entry.id)),
+    ...list.entries,
+  ] }));
   const selectedIds = componentReferenceIds(field, value);
   const selectedSet = new Set(selectedIds);
   const entryData = new Map(referenceLists.flatMap((referenceList) => referenceList.entries.map((entry) => [entry.id, { entry, referenceList }] as const)));
@@ -598,7 +607,7 @@ function ComponentFieldInput({ field, referenceLists, value, onChange }: { field
             <Badge variant="secondary">component</Badge>
             <Badge variant="outline">{field.isList ? "list" : "single"}</Badge>
           </div>
-          <Button size="sm" variant="outline" disabled={!referenceLists.length} onClick={() => setOpen(true)}>
+          <Button type="button" size="sm" variant="outline" disabled={!referenceLists.length} onClick={() => setOpen(true)}>
             <Plus data-icon="inline-start" /> {field.isList ? "Add entries" : selectedIds.length ? "Change entry" : "Select entry"}
           </Button>
         </div>
@@ -623,8 +632,18 @@ function ComponentFieldInput({ field, referenceLists, value, onChange }: { field
           {!selectedIds.length && <p className="rounded-md border bg-card p-3 text-muted-foreground">No entries selected.</p>}
         </div>
       </div>
-      <ComponentEntryDialog open={open} onOpenChange={setOpen} field={field} referenceLists={referenceLists} selectedSet={selectedSet} onSelect={selectEntry} />
-      <FieldHelp field={field} hint={`Select ${field.isList ? "one or more entries" : "an entry"} from ${field.targetModels.length === 1 ? field.targetModels[0]?.name : `${field.targetModels.length} allowed models`}.`} />
+      <ComponentEntryDialog open={open} onOpenChange={setOpen} field={field} referenceLists={referenceLists} selectedSet={selectedSet} onSelect={selectEntry} onCreate={(model) => { setOpen(false); setCreatingModel(model); }} />
+      {creatingModel && <CreateComponentEntryDialog
+        tenantSlug={tenantSlug}
+        referenceList={creatingModel}
+        onCancel={() => { setCreatingModel(null); setOpen(true); }}
+        onCreated={(entry) => {
+          setCreatedEntries((current) => [entry, ...current]);
+          selectEntry(entry.id);
+          setCreatingModel(null);
+        }}
+      />}
+      <FieldHelp field={field} hint={`Select or create ${field.isList ? "entries" : "an entry"} from ${field.targetModels.length === 1 ? field.targetModels[0]?.name : `${field.targetModels.length} allowed models`}.`} />
     </Field>
   );
 }
@@ -645,19 +664,26 @@ function SelectedComponentEntry({ entryId, entry, modelName, titleField, canMove
   );
 }
 
-function ComponentEntryDialog({ open, onOpenChange, field, referenceLists, selectedSet, onSelect }: { open: boolean; onOpenChange: (open: boolean) => void; field: ContentField; referenceLists: ComponentReferenceList[]; selectedSet: Set<string>; onSelect: (entryId: string) => void }) {
+function ComponentEntryDialog({ open, onOpenChange, field, referenceLists, selectedSet, onSelect, onCreate }: { open: boolean; onOpenChange: (open: boolean) => void; field: ContentField; referenceLists: ComponentReferenceList[]; selectedSet: Set<string>; onSelect: (entryId: string) => void; onCreate: (model: ComponentReferenceList) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="p-0 sm:max-w-lg">
         <DialogHeader className="px-4 pt-4">
           <DialogTitle>Select {field.label}</DialogTitle>
-          <DialogDescription>Search and select entries from any allowed component model.</DialogDescription>
+          <DialogDescription>Select an existing entry or create a new component to add here.</DialogDescription>
         </DialogHeader>
         <Separator />
         <Command className="rounded-none">
           <CommandInput placeholder="Search entries..." />
           <CommandList className="max-h-96">
             <CommandEmpty>No entries found.</CommandEmpty>
+            <CommandGroup heading="Create new" forceMount>
+              {referenceLists.map((referenceList) => (
+                <CommandItem key={referenceList.modelId} value={`create-${referenceList.modelId}`} forceMount onSelect={() => onCreate(referenceList)}>
+                  <Plus /> Create new {referenceList.modelName}
+                </CommandItem>
+              ))}
+            </CommandGroup>
             {referenceLists.map((referenceList) => (
             <CommandGroup key={referenceList.modelId} heading={referenceList.modelName}>
               {referenceList.entries.map((entry) => {
@@ -675,6 +701,82 @@ function ComponentEntryDialog({ open, onOpenChange, field, referenceLists, selec
             ))}
           </CommandList>
         </Command>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateComponentEntryDialog({ tenantSlug, referenceList, onCancel, onCreated }: {
+  tenantSlug: string;
+  referenceList: ComponentReferenceList;
+  onCancel: () => void;
+  onCreated: (entry: ContentEntry) => void;
+}) {
+  const [form, setForm] = useState<Awaited<ReturnType<typeof loadComponentEntryFormAction>> | null>(null);
+  const [data, setData] = useState<Record<string, unknown>>({});
+  const [translations, setTranslations] = useState<EntryTranslations>({});
+  const [pageParentId, setPageParentId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [loadAttempt, setLoadAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadComponentEntryFormAction(tenantSlug, referenceList.modelId).then((result) => {
+      if (cancelled) return;
+      setData(createDefaultEntryData(result.fields));
+      setForm(result);
+    }).catch((error: unknown) => {
+      if (!cancelled) setError(error instanceof Error ? error.message : "Could not load component fields");
+    });
+    return () => { cancelled = true; };
+  }, [tenantSlug, referenceList.modelId, loadAttempt]);
+
+  const missingFields = form ? missingRequiredFields(form.fields, data) : [];
+
+  function create() {
+    if (!form || isPending || missingFields.length) return;
+    setError("");
+    startTransition(async () => {
+      try {
+        const result = await createEntryAction(tenantSlug, form.model.id, normalizeEntryData(form.fields, data), normalizeTranslations(form.fields, translations), pageParentId);
+        onCreated(result.entry);
+        toast.success(`${referenceList.modelName} created and added`);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Could not create component");
+      }
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !isPending) onCancel(); }}>
+      <DialogContent
+        className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+        showCloseButton={!isPending}
+        onInteractOutside={(event) => event.preventDefault()}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            event.stopPropagation();
+            create();
+          }
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Create new {referenceList.modelName}</DialogTitle>
+          <DialogDescription>Create a draft component and add it to your content. Your current edits will be kept.</DialogDescription>
+        </DialogHeader>
+        {!form && !error && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading fields…</p>}
+        {form && <fieldset disabled={isPending} className="min-w-0 space-y-6">
+          {form.model.pageUrl?.hierarchy && <PageHierarchyFields tenantSlug={tenantSlug} {...form} data={data} translations={translations} pageParentId={pageParentId} onChange={setPageParentId} />}
+          <EntryForm siblingSlugField={form.model.pageUrl?.hierarchy ? form.model.pageUrl.slugField : null} tenantSlug={tenantSlug} {...form} data={data} translations={translations} onChange={setData} onTranslationsChange={setTranslations} />
+        </fieldset>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {missingFields.length > 0 && <p className="text-sm text-muted-foreground">Required: {missingFields.map((field) => field.label).join(", ")}</p>}
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={isPending} onClick={onCancel}>Cancel</Button>
+          {!form && error ? <Button type="button" onClick={() => { setError(""); setLoadAttempt((attempt) => attempt + 1); }}>Retry</Button> : <Button type="button" disabled={!form || isPending || missingFields.length > 0} onClick={create}>{isPending ? "Creating…" : "Create and add"}</Button>}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
